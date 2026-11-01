@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.bak
+new_cars/
+*.egg-info/
+.venv/
+node_modules/

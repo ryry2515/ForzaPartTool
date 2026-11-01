@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FH1 Carbin Editor</title>
+<link rel="stylesheet" href="/style.css">
+<script type="importmap">
+{ "imports": { "three": "/vendor/three/build/three.module.js",
+               "three/addons/": "/vendor/three/examples/jsm/" } }
+</script>
+</head>
+<body>
+<header id="top">
+  <strong>FH1 Carbin Editor</strong>
+  <label class="btn">Open .carbin<input id="fileIn" type="file" accept=".carbin" hidden></label>
+  <button id="btnUndo" title="Ctrl+Z">Undo</button>
+  <button id="btnRedo" title="Ctrl+Y">Redo</button>
+  <button id="btnSave">Download .carbin</button>
+  <button id="btnExport">Export OBJ</button>
+  <span id="fileName" class="muted">no file open</span>
+</header>
+<main>
+  <aside id="left">
+    <div class="bar">
+      <input id="filter" placeholder="filter parts or materials">
+      <button id="btnHide" title="hide the selected part (Ctrl+H)">Hide</button><button id="btnIso" title="show only the selected part (Ctrl+I)">Isolate</button><button id="btnShowAll" title="show every part (Ctrl+Shift+H)">Show all</button>
+    </div>
+    <div class="bar" id="lodBar"></div>
+    <div id="tree"></div>
+  </aside>
+  <section id="view">
+    <div id="viewOpts">
+      <label><input type="checkbox" id="optWire"> wireframe</label>
+      <label>texture <select id="optTex"><option value="off">off</option><option value="auto">auto</option><option value="nodamage">nodamage</option><option value="lights">lights</option><option value="interior">interior</option><option value="damage">damage</option></select></label>
+      <label><input type="checkbox" id="optNormals"> normals</label>
+      <label><input type="checkbox" id="optBoxes"> all boxes</label>
+      <label><input type="checkbox" id="optBox" checked> selection box</label>
+      <label><input type="checkbox" id="optLights" checked> lights</label>
+      <label><input type="checkbox" id="optEx" checked> exhausts</label>
+      <label><input type="checkbox" id="optHidden" checked> parts the game does not draw</label>
+      <span class="muted">front = -z (arrow)</span>
+    </div>
+    <canvas id="gl"></canvas>
+  </section>
+  <aside id="right">
+    <nav id="tabs">
+      <button data-tab="part" class="on">Part</button>
+      <button data-tab="model">Add model</button>
+      <button data-tab="lights">Lights</button>
+      <button data-tab="exhausts">Exhausts</button>
+      <button data-tab="physics">Physics</button>
+      <button data-tab="skeleton">Skeleton</button>
+      <button data-tab="archive">Archive</button>
+      <button data-tab="strings">Strings</button>
+      <button data-tab="file">Open / Save</button>
+    </nav>
+    <div id="tab-part" class="tab"></div>
+    <div id="tab-model" class="tab" hidden></div>
+    <div id="tab-lights" class="tab" hidden></div>
+    <div id="tab-exhausts" class="tab" hidden></div>
+    <div id="tab-physics" class="tab" hidden></div>
+    <div id="tab-skeleton" class="tab" hidden></div>
+    <div id="tab-archive" class="tab" hidden></div>
+    <div id="tab-strings" class="tab" hidden></div>
+    <div id="tab-file" class="tab" hidden></div>
+  </aside>
+</main>
+<footer id="status">ready</footer>
+<input id="objIn" type="file" accept=".obj" hidden>
+<input id="modelIn" type="file" accept=".fbx,.glb,.gltf,.obj" hidden>
+<datalist id="materials"></datalist>
+<script type="module" src="/app.js"></script>
+</body>
+</html>
