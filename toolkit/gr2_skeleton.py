@@ -1,6 +1,6 @@
 """gr2_skeleton.py - read and edit the Granny skeleton and animation files of a Forza Horizon 1 car (`car_skeleton_LOD05.gr2`, `car_animations_LOD05.gr2`).
 
-Only cars with moving parts have them (pop-up headlights, vents, flaps). Units are 3ds Max units, 20 per metre; axes: max = (game x * 20, -game z * 20, game y * 20) (guide section 29).
+Only cars with moving parts have them (pop-up headlights, vents, flaps). Units are 3ds Max units, 20 per metre; axes: max = (game x * 20, -game z * 20, game y * 20).
 All edits are in place and keep the file size (gr2.Gr2.build() writes the sections back uncompressed, which the game loads).
 
     f = gr2.read(data)

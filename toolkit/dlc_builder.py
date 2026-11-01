@@ -1,10 +1,10 @@
 """dlc_builder.py - assemble an installable Forza Horizon 1 DLC package from files you provide.
 
-What it writes (layout measured from a working multi-part pack, see guide section 3):
+What it writes (layout measured from a working multi-part pack):
     Media/<offer>.puboffer                                          one space + CRLF
     Media/DLCZips/<offer>_pri_99.zip, <offer>part2_pri_99.zip ...   your car files (stored zip: no compression needed)
     Media/DLCZips/<offer>_pri_99/Media/db/patch/<offer>00_merge.slt rows merged into the game database at boot
-    Media/DLCZips/StringTables_pri_99<offer>/<LANG>/<Table>.str     string tables (superset of the base game's, see guide section 5)
+    Media/DLCZips/StringTables_pri_99<offer>/<LANG>/<Table>.str     string tables (superset of the base game's)
     Media/DLCZips/stringtables.xml, zipmount.xml                    which tables the pack overrides and where they are mounted
     plus any loose files you pass (for example engine sound banks under Media/DLCZips/<offer>_pri_99/Media/audio/...)
 
@@ -13,13 +13,13 @@ The result can be written as a folder for Xenia (with the .header file Xenia nee
 Typical use:
     from dlc_builder import *
     db = new_merge_db(base_gamedb_bytes, ["ContentOffers", "Data_Car"])     # empty tables with the game's own schema
-    db.execute("insert into ContentOffers ...")                              # add your rows (see guide sections 4, 11, 13)
+    db.execute("insert into ContentOffers ...")                              # add your rows
     files = build_files(3070, merge_db=finish_merge_db(db), car_zips={"cars": {"media/cars/XXX/...": b"..."}}, string_tables={...})
     folder = write_xenia_folder(files, "out", 3070, "My pack")               # then copy into Xenia (xenia_install.py) when Xenia is closed
     write_stfs(files, "out/console/" + package_name(3070), "My pack")        # for a modded 360
     verify_folder(folder)
 
-Nothing here installs anything. Close Xenia before installing (the guide, section 1).
+Nothing here installs anything. Close Xenia before installing.
 """
 from __future__ import annotations
 
@@ -52,7 +52,7 @@ def offer_id_int(offer: int) -> int:
 
 def content_offer_row(offer: int, display_name_ref: str, description_ref: str = "") -> dict:
     """A ContentOffers row shaped like the one in a working pack (IsDLC 1, installed and purchased).
-    display_name_ref / description_ref are '_&N' string references (see guide section 5)."""
+    display_name_ref / description_ref are '_&N' string references."""
     return {"ID": offer_id_text(offer), "OfferId": offer_id_int(offer), "DisplayName": display_name_ref, "Description": description_ref,
             "PubOfferingID": offer, "LicenseLevel": 2, "LicenseMask": 0, "IsDLC": 1, "ImagePath": "", "ThumbPath": "",
             "IsInstalled": 1, "IsPurchased": 1, "IsVIP": 0, "Hidden": 0, "IsALaCarte": 0, "SeasonPassOffer": 0}
@@ -73,7 +73,7 @@ def stringtables_xml(tables: list[str]) -> bytes:
 
 
 def zipmount_xml(offer: int, extra_mounts: list[tuple[str, str]] = (), strings: bool = True) -> bytes:
-    """Mount the string table folder, plus optional extra mounts [(zip/folder name, game path)] such as engine tuning folders (guide section 10)."""
+    """Mount the string table folder, plus optional extra mounts [(zip/folder name, game path)] such as engine tuning folders."""
     rows = [f'   <zip Name="StringTables_pri_99{offer}" Mount="game:\\Media\\StringTables\\" AltRootPath="game:\\Media\\StringTables\\" ShouldCache="0"  />'] if strings else []
     rows += [f'   <zip Name="{n}" Mount="{m}" AltRootPath="same" ShouldCache="0"/>' for n, m in extra_mounts]
     return ('<?xml version="1.0" ?> \r\n<zipmount> \r\n' + " \r\n".join(rows) + ' \r\n</zipmount> \r\n').encode()
@@ -137,7 +137,7 @@ def build_files(offer: int, *, merge_db: bytes, car_zips: dict[str, dict[str, by
 
 
 def xenia_header(name: str, display: str, title_id: int = TITLE_ID) -> bytes:
-    """The 332-byte .header file Xenia needs next to an installed package (guide section 3)."""
+    """The 332-byte .header file Xenia needs next to an installed package."""
     h = bytearray(332)
     struct.pack_into(">II", h, 0, 1, 2)
     d = display.encode("utf-16-be")[:254]
@@ -165,7 +165,7 @@ def write_xenia_folder(files: dict[str, bytes], out_dir, offer: int, display: st
 
 
 def write_stfs(files: dict[str, bytes], out_path, display: str, description: str = "") -> Path:
-    """Console package (STFS). A file inside must stay under 4 GB and the whole package under about 3.8 GiB; split larger packs into more offers (guide section 3)."""
+    """Console package (STFS). A file inside must stay under 4 GB and the whole package under about 3.8 GiB; split larger packs into more offers."""
     import stfs
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
     p = stfs.build_stfs(files, Path(out_path), display_name=display, description=description)
@@ -191,7 +191,7 @@ def verify_folder(folder) -> list[str]:
             problems.append(f"{n}: bad member {bad}")
         low = [m.lower() for m in z.namelist()]
         if len(low) != len(set(low)):
-            problems.append(f"{n}: two members differ only by case (crashes the game, guide section 3)")
+            problems.append(f"{n}: two members differ only by case (crashes the game)")
     merges = pkg.merges()
     if len(merges) != 1:
         problems.append(f"expected one merge database, found {len(merges)}")

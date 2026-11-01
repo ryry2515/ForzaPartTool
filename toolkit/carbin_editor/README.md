@@ -36,7 +36,7 @@ Nothing is written while Xenia is running (the editor checks). "Download .carbin
 4. Pick the **part** it belongs to, **add onto the part** (keeps everything the part has) or **replace** its geometry, which **LODs** get it, and a car **material** for each material in your model (`body`, `chrome`, `black`, glass names...).
 5. **Add to car.** It is added to the part and to the game's draw lists for the LODs you chose. Do the same in the `_lod0` and `_cockpit` files if the model should show in photo mode and the cockpit view.
 
-By default an added model has no texture of its own: it takes the flat colour of the material you pick (the car's atlas textures hold the colours; section 7 of the guide). To give it a picture, use the texture picker (see "Textures, files and strings" below).
+By default an added model has no texture of its own: it takes the flat colour of the material you pick (the car's atlas textures hold the colours). To give it a picture, use the texture picker (see "Textures, files and strings" below).
 
 ## Save as a new car (and what has been seen in the game)
 
@@ -50,7 +50,7 @@ The Open / Save tab can copy the open car into a **new car inside a DLC package*
 ## Textures, files and strings
 
 - **Textured view:** the texture selector in the viewer paints the car with its own baked atlases (`nodamage`, `lights`, `interior`, `damage`), chosen automatically per part or by hand. Body paint is shown as a red tint because the game applies paint at run time.
-- **Texture for an added model:** in the Add model tab choose an image. Every exterior material of a car reads one body atlas (`nodamage`, with `damage` and the `_LOD0` sizes; the game's shaders, guide section 7), and that atlas is about 95% in use: parts' own areas, plus lamp, glass and logo pictures. The picker therefore shows the atlas with what is still read in red, lists the parts with the area **only** they read, and you tick the parts whose texture you will give up (they look wrong afterwards). **Auto place** puts the picture into the largest free rectangle of the image's shape (all mip levels, both atlas sizes) and the model's UVs point there. You can also drag a rectangle yourself. Expect small areas: with nothing given up a base car has about 1 to 3% free, in slivers; giving up a few parts frees a few percent more (a 40 by 40 texel patch in the test). For a car in a DLC the atlas files are rewritten in place (backup made); for a game car they go into the new car you build.
+- **Texture for an added model:** in the Add model tab choose an image. Every exterior material of a car reads one body atlas (`nodamage`, with `damage` and the `_LOD0` sizes; the game's shaders), and that atlas is about 95% in use: parts' own areas, plus lamp, glass and logo pictures. The picker therefore shows the atlas with what is still read in red, lists the parts with the area **only** they read, and you tick the parts whose texture you will give up (they look wrong afterwards). **Auto place** puts the picture into the largest free rectangle of the image's shape (all mip levels, both atlas sizes) and the model's UVs point there. You can also drag a rectangle yourself. Expect small areas: with nothing given up a base car has about 1 to 3% free, in slivers; giving up a few parts frees a few percent more (a 40 by 40 texel patch in the test). For a car in a DLC the atlas files are rewritten in place (backup made); for a game car they go into the new car you build.
 - **Automatic LODs:** the lowest ticked LOD gets the full model, higher LODs get simplified copies sized like the part's own LODs.
 - **Archive tab:** every file in the open car's archive. Textures show a preview, their size and mip count, and can be downloaded as PNG or **replaced from any image** (resized to the texture, every mip level regenerated except a tiny tail level the game packs differently). Text files (`CarAttribs.xml`, `ShaderSettings.xml`, ...) open in an editor and save back. Any other file can be downloaded or replaced.
 - **Strings tab:** browse the game's string tables by language, table and search (read only).
@@ -72,7 +72,7 @@ The Open / Save tab can copy the open car into a **new car inside a DLC package*
 | conversion tool between games | **not included** (the FM4-to-FH1 converter is separate and private) |
 | physics definition | **Physics tab**: collision spheres and hull drawn on the car, edit / add / remove spheres, scale and move, fit to your edits, body numbers; saves `physicsdefinition.bin` and `MAXData.xml` |
 | skeleton and animation | **Skeleton tab**: bones drawn on the car, move and turn a bone, make an animation longer or shorter; saves the `.gr2` files |
-| fxb, bxml, materials | **not included** (materials live in the game's shader files; a material name picks a shader, guide section 7) |
+| fxb, bxml, materials | **not included** (materials live in the game's shader files; a material name picks a shader) |
 
 ## Everything else it does
 
@@ -89,17 +89,17 @@ The Open / Save tab can copy the open car into a **new car inside a DLC package*
 
 ## How geometry is written
 
-(Encodings come from the game's own cars; see guide section 6.) Positions are re-encoded against new bounds around the part pivot; normals and tangent frames from your normals and UVs; uv0 (the atlas) uses a flat swatch texel for materials the car already draws flat, and your UVs otherwise; uv1 uses your UVs; the 4 baked-lighting bytes per vertex are fitted from the car's own vertices; triangles become strips. **Add** keeps the part's existing vertices untouched (only their position words are re-encoded when the bounds grow) and clears the part's per-vertex damage data, because its length must match the vertex count.
+(Encodings were measured on the game's own cars.) Positions are re-encoded against new bounds around the part pivot; normals and tangent frames from your normals and UVs; uv0 (the atlas) uses a flat swatch texel for materials the car already draws flat, and your UVs otherwise; uv1 uses your UVs; the 4 baked-lighting bytes per vertex are fitted from the car's own vertices; triangles become strips. **Add** keeps the part's existing vertices untouched (only their position words are re-encoded when the bounds grow) and clears the part's per-vertex damage data, because its length must match the vertex count.
 
 ## What is tested and what is not
 
 Tested offline on the base game's cars: vertex decode and re-encode within 0.07 mm; OBJ export and import round trip for every part of three carbins, with identical triangle counts per LOD, identical draw lists and clean checks; adding a model onto a part keeps the old vertices byte for byte; saving into an extracted game copy and into a DLC package folder keeps every other archive member identical (Xbox LZX members included); the editor's API, undo, error handling, the drop-in flow in a browser.
-**Tested in the game (Xenia):** see "Save as a new car" above. **Not tested in the game:** everything listed there as built offline only. Test every change (guide section 17): one change per test, keep a booting build as the revert point, read `xenia.log`. The FBX and glTF loaders (three.js's) were driven in the browser with a binary FBX (centimetres) and a GLB; both loaded at the right size and added onto a part with clean checks.
+**Tested in the game (Xenia):** see "Save as a new car" above. **Not tested in the game:** everything listed there as built offline only. Test every change: one change per test, keep a booting build as the revert point, read `xenia.log`. The FBX and glTF loaders (three.js's) were driven in the browser with a binary FBX (centimetres) and a GLB; both loaded at the right size and added onto a part with clean checks.
 
 ## Limits
 
 - A textured part costs texture area of other parts (see the texture bullet); which materials read the body atlas is decided by their shaders, not stored in the car files, so the part list is a good estimate, not a proof.
-- Collision hull points can be moved and scaled, not added; the face tables of the hull are not edited. The 30 header floats of `physicsdefinition.bin` (two 3x3 tensors and eleven more) are shown in the guide but their meaning is not decoded, so mass-related changes are not made.
+- Collision hull points can be moved and scaled, not added; the face tables of the hull are not edited. The 30 header floats of `physicsdefinition.bin` (two 3x3 tensors and eleven more) are shown in `toolkit/physdef.py` but their meaning is not decoded, so mass-related changes are not made.
 - Skeleton edits move or turn a bone; they do not add bones. Animation edits change the length only, not the curves.
 - You cannot add or remove whole parts: the header refers to parts by position and the game finds some by name. Add geometry onto an existing part instead.
 - Imported geometry is not welded across sub-meshes, so vertex counts grow (triangle counts stay the same).

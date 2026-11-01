@@ -1,4 +1,4 @@
-"""fh1tool.py - command-line access to Forza Horizon 1 game files, for people and for AI assistants.
+"""fh1tool.py - command-line access to Forza Horizon 1 game files, for people and for scripts.
 
 GAME is the user's own Forza Horizon 1 install: the Games on Demand folder (the one that holds 00007000 and is named 4D5309C9), an extracted folder, or an .iso.
 Paths use forward slashes and are matched case-insensitively. Inside an archive use  archive.zip::member/path  (for example media/UI.zip::ResPack.xml).

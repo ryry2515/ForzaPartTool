@@ -3,12 +3,12 @@
 Two kinds of location:
   game   the base game. Readable from a Games on Demand folder or an .iso, but only an EXTRACTED game folder can be written to
          (files such as <game>/media/cars/<Car>.zip). Edits to a base-game car only take effect when saved into the extracted game:
-         the game always prefers its own files over a DLC's files of the same path (guide section 3).
+         the game always prefers its own files over a DLC's files of the same path.
   dlc    installed or built DLC packages (folders; STFS packages are readable but not writable). A car that a DLC adds lives in
          <package>/Media/DLCZips/*.zip under media/cars/<Media>/.
 Saving replaces ONE member of the zip. Every other member is copied byte for byte (compressed data, order and the Xbox LZX marker field are kept),
 a backup <zip>.bak is made once, and the new file is checked before it replaces the old one.
-Nothing is written while Xenia is running (the guide's rule: never change an installed pack under a running emulator).
+Nothing is written while Xenia is running (never change an installed pack under a running emulator).
 """
 from __future__ import annotations
 

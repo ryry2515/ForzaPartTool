@@ -249,7 +249,7 @@ function renderPart() {
         el('td', { style: 'width:46px' }, el('input', { type: 'number', value: b.lod, min: 0, max: 5, onchange: e => run('set_sub', { section: s.index, sub: b.index, lod: parseInt(e.target.value) }, [s.index]) })),
         el('td', {}, String(b.tris)),
         el('td', {}, el('button', { class: 'danger', title: 'delete this sub-mesh', onclick: () => confirm(`Delete sub-mesh ${b.material} (LOD ${b.lod})?`) && run('delete_sub', { section: s.index, subs: [b.index] }, [s.index]) }, 'x'))))),
-    el('p', { class: 'muted' }, 'A material name must exist in the car\'s ShaderSettings.xml to behave as expected (guide section 7). • = reads one flat swatch colour.'),
+    el('p', { class: 'muted' }, 'A material name must exist in the car\'s ShaderSettings.xml to behave as expected. • = reads one flat swatch colour.'),
     el('h3', {}, 'In the game'),
     el('div', { class: 'field' },
       el('button', { onclick: () => run('hide_section', { section: s.index }, []) }, 'Do not draw this part'),
@@ -317,7 +317,7 @@ function renderObjDialog() {
     el('div', { class: 'field' }, el('label', {}, ''), el('label', { class: 'chk' }, el('input', { type: 'checkbox', id: 'oDraw' }), ' draw the part in the game even if it was hidden')),
     el('table', {}, el('tr', {}, ['OBJ material', 'FH1 material'].map(h => el('th', {}, h))), [...mats].map(m => el('tr', {}, el('td', {}, m), el('td', {}, el('input', { 'data-m': m, value: m, list: 'materials' }))))),
     el('div', { class: 'field' }, el('button', { class: 'primary', onclick: doImport }, 'Replace geometry'), el('button', { onclick: () => { st.objInfo = null; renderObjDialog(); } }, 'Cancel')),
-    el('p', { class: 'muted' }, 'The new geometry replaces ALL sub-meshes of the part. Baked lighting is fitted from the car\'s own vertices; the damage data of the part is cleared. Untested in the game: test every imported part (guide section 17).'));
+    el('p', { class: 'muted' }, 'The new geometry replaces ALL sub-meshes of the part. Baked lighting is fitted from the car\'s own vertices; the damage data of the part is cleared. Untested in the game: test every imported part.'));
 }
 
 async function doImport() {
@@ -331,7 +331,7 @@ async function doImport() {
 function renderLights() {
   const box = $('#tab-lights'); box.replaceChildren();
   if (!st.sum || !st.sum.body_header) { box.append(el('p', { class: 'muted' }, 'This file has no light records (only the main carbin has them).')); return; }
-  box.append(el('p', { class: 'muted' }, 'Light records (guide section 8). Positions use +z = front, so the view draws them with z flipped. Put each record on the real bulb. Role 4 = beam; glow size above 15 gives huge halos.'),
+  box.append(el('p', { class: 'muted' }, 'Light records. Positions use +z = front, so the view draws them with z flipped. Put each record on the real bulb. Role 4 = beam; glow size above 15 gives huge halos.'),
     el('div', { class: 'field' }, el('button', { onclick: () => run('light_add', {}, []) }, 'Add light'), el('span', { class: 'muted' }, `${st.sum.lights.length} records`)));
   for (const l of st.sum.lights) {
     const set = (fields) => run('light_set', { index: l.index, fields }, []);
@@ -355,7 +355,7 @@ function renderLights() {
 function renderExhausts() {
   const box = $('#tab-exhausts'); box.replaceChildren();
   if (!st.sum || !st.sum.body_header) { box.append(el('p', { class: 'muted' }, 'This file has no exhaust emitters.')); return; }
-  box.append(el('p', { class: 'muted' }, 'Exhaust and backfire emitters (guide section 6). Move positions only: the count and the side flags bind each emitter to an exhaustL*/exhaustR* part, and changing them crashed the game.'));
+  box.append(el('p', { class: 'muted' }, 'Exhaust and backfire emitters. Move positions only: the count and the side flags bind each emitter to an exhaustL*/exhaustR* part, and changing them crashed the game.'));
   for (const e of st.sum.exhausts) {
     box.append(el('div', { class: 'light' }, el('div', { class: 'field' }, el('strong', {}, '#' + e.index), el('span', { class: 'pill' }, e.flag === 2 ? 'left' : e.flag === 3 ? 'right' : 'flag ' + e.flag)),
       el('div', { class: 'field' }, el('label', {}, 'position'), el('div', { class: 'grid3' }, [0, 1, 2].map(i => el('input', { type: 'number', step: 0.005, value: e.pos[i].toFixed(4), onchange: ev => { const p = [...e.pos]; p[i] = parseFloat(ev.target.value); run('exhaust_set', { index: e.index, pos: p }, []); } }))))));
@@ -483,9 +483,9 @@ function renderModel() {
     el('h3', {}, 'Materials'),
     el('table', {}, el('tr', {}, ['in your model', 'tris', 'FH1 material'].map(h => el('th', {}, h))),
       place.mats.map(m => el('tr', {}, el('td', {}, m.name), el('td', {}, String(m.tris)), el('td', {}, el('input', { 'data-mat': m.name, value: guessMaterial(m.name), list: 'materials' }))))),
-    el('p', { class: 'muted' }, 'A material name must exist in the car\'s ShaderSettings.xml, and its look comes from the car\'s atlas textures (guide sections 7 and 8). An added model has no texture of its own: it uses the flat colour of the material you pick.'),
+    el('p', { class: 'muted' }, 'A material name must exist in the car\'s ShaderSettings.xml, and its look comes from the car\'s atlas textures. An added model has no texture of its own: it uses the flat colour of the material you pick.'),
     el('h3', {}, 'Texture (optional)'),
-    el('p', { class: 'muted' }, 'Give the model its own picture. Every exterior material of the car reads one body atlas (the game\'s shaders, guide section 7), and that atlas is about 97% full, so a picture needs the texture area of some parts: tick the parts you do not need (the list shows how much area only that part reads), press Auto place, and the picture is painted into the largest free rectangle (all mip levels, both atlas sizes). The ticked parts will then look wrong. Red on the atlas = still read by a part you keep. You can also drag a rectangle yourself. For a car in a DLC the atlas files are rewritten in place (a backup is made); for a base-game car they go into the new car you save.'),
+    el('p', { class: 'muted' }, 'Give the model its own picture. Every exterior material of the car reads one body atlas (the game\'s shaders), and that atlas is about 97% full, so a picture needs the texture area of some parts: tick the parts you do not need (the list shows how much area only that part reads), press Auto place, and the picture is painted into the largest free rectangle (all mip levels, both atlas sizes). The ticked parts will then look wrong. Red on the atlas = still read by a part you keep. You can also drag a rectangle yourself. For a car in a DLC the atlas files are rewritten in place (a backup is made); for a base-game car they go into the new car you save.'),
     el('div', { class: 'field' }, el('input', { type: 'file', accept: 'image/*', id: 'mTexFile', onchange: e => { st.texFile = e.target.files[0] || null; drawTexCanvas(); } }), el('button', { onclick: () => { st.texFile = null; st.texRect = null; document.getElementById('mTexFile').value = ''; drawTexCanvas(); } }, 'No texture')),
     el('div', { class: 'field' }, el('button', { onclick: autoPlace }, 'Auto place'), el('span', { class: 'muted', id: 'mFreeInfo' }, '')),
     el('div', { id: 'mParts', style: 'max-height:140px;overflow:auto;border:1px solid var(--line);padding:4px;margin:4px 0' }),
@@ -674,7 +674,7 @@ function cloneSection() {
     r && r.error ? el('div', {}, el('p', { class: 'warn' }, r.error), r.problems && r.problems.length ? el('ul', { class: 'problems' }, r.problems.map(p => el('li', {}, p))) : '') : '',
     r && (r.folder || r.stfs) ? el('div', {}, el('p', { class: 'ok' }, `Exported: car id ${r.car_id}, ${r.rows} rows in ${r.tables} tables, ${r.files} files; edited files: ${r.edited.join(', ')}. ${r.folder ? (r.problems.length ? 'Package problems: ' + r.problems.join('; ') : 'Package checks passed.') : 'Console package written and read back.'}`),
       r.folder ? el('div', {}, el('p', {}, 'Xenia (with Xenia closed): back up your save, copy the folder'), el('p', { class: 'muted' }, r.folder), el('p', {}, 'to  ...\\4D5309C9\\00000002\\  and the file'), el('p', { class: 'muted' }, r.header), el('p', {}, 'to  ...\\4D5309C9\\Headers\\00000002\\ .')) : '',
-      r.stfs ? el('div', {}, el('p', {}, 'Modded 360: the console package'), el('p', { class: 'muted' }, r.stfs), el('p', {}, 'goes on a USB stick like any content package (guide section 3).')) : '',
+      r.stfs ? el('div', {}, el('p', {}, 'Modded 360: the console package'), el('p', { class: 'muted' }, r.stfs), el('p', {}, 'goes on a USB stick like any content package.')) : '',
       el('p', {}, 'Then buy the new car in the Autoshow. Removing the pack later needs the save restored, because a saved car would point at nothing.')) : ''];
 }
 
@@ -828,7 +828,7 @@ async function physBodySave() {
 st.skel = null;
 let skelObjs = [];
 function clearSkel() { for (const o of skelObjs) { overlay.remove(o); o.traverse(x => { x.geometry && x.geometry.dispose(); }); } skelObjs = []; }
-const maxToGame = w => [w[0] / 20, w[2] / 20, -w[1] / 20];            // 3ds Max units (20 per metre, z up, y forward) to the car's metres (guide section 29)
+const maxToGame = w => [w[0] / 20, w[2] / 20, -w[1] / 20];            // 3ds Max units (20 per metre, z up, y forward) to the car's metres
 function drawSkeleton() {
   clearSkel();
   const s = st.skel; if (!s || $('#tab-skeleton').hidden) return;
@@ -1080,7 +1080,7 @@ async function renderStrings() {
       el('select', { onchange: e => { st.strTable = e.target.value; fillStrings(); } }, tables.map(n => el('option', { value: n, selected: n === st.strTable }, n)))),
     el('div', { class: 'field' }, el('input', { id: 'strQ', placeholder: 'search key, name or text', value: st.strQ || '', oninput: e => { st.strQ = e.target.value; fillStrings(); } })),
     el('div', { id: 'strRows' }),
-    el('p', { class: 'muted' }, 'Names in the game use "_&N" references into these tables. A DLC that changes a table must ship a superset of it (guide section 5).'));
+    el('p', { class: 'muted' }, 'Names in the game use "_&N" references into these tables. A DLC that changes a table must ship a superset of it.'));
   fillStrings();
 }
 async function fillStrings() {

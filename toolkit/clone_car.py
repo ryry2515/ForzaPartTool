@@ -5,9 +5,9 @@
 What it makes: a package folder (and the Xenia header) holding the new car: its own database rows in every per-car table, its own copy of the car's files
 (models, textures, gauges, livery masks, shader settings) under the new name, the Autoshow thumbnail and the car-model audio tuning file.
 The wheels, engine sound banks, engine tuning and the names shown in the game are shared with the donor (the name strings are the donor's), so the copy shows the
-donor's name in the game until you add string tables (guide section 5).
+donor's name in the game until you add string tables.
 
-How the database rows are copied (measured on the base game, guide sections 4 and 23):
+How the database rows are copied (measured on the base game):
   * a car has ids in several spaces: car (Data_Car.Id, `Ordinal` / `CarId` / `ModelId` columns), engine (`EngineID`), drivetrain (`DrivetrainID`), body (`CarBodyID`),
     and torque curves (`TorqueCurveID` = engine * 1000 + n). Every id the donor OWNS gets a new, unused value; ids it merely points at (shared wheels, shared engine swaps,
     physics rows) are left alone.
@@ -15,7 +15,7 @@ How the database rows are copied (measured on the base game, guide sections 4 an
   * a ContentOffers row and a ContentOffersMapping row make the package own the car.
 New media name: the SAME LENGTH as the donor's (the name is replaced inside text and gauge files without moving any byte). New ids stay below 32768 (engine ids must).
 Checked offline before anything is written: merge into a copy of the game database (no key collisions), and the donor and the copy have the same number of rows in every table.
-Not tested in the game unless the guide says so.
+Not tested in the game unless the editor README says so.
 """
 from __future__ import annotations
 
@@ -68,7 +68,7 @@ def clone_car(game: src.BaseGame, donor_media: str, new_media: str, offer: int, 
               new_id: int | None = None, donor_package: src.DLCPackage | None = None, replace_files: dict[str, bytes] | None = None, log=print,
               display_name: str | None = None, short_name: str | None = None, body_overrides: dict | None = None) -> dict:
     """-> {"files": {path in package: bytes}, "report": {...}}. replace_files: {file name relative to the car folder: bytes} used instead of the donor's (for example your edited carbin).
-    display_name / short_name: the name shown in the Autoshow and garage. They are written into Data_Car as plain text, which the game shows as it is (guide section 4), so no string table is needed
+    display_name / short_name: the name shown in the Autoshow and garage. They are written into Data_Car as plain text, which the game shows as it is, so no string table is needed
     and nothing clashes with other packs. Without them the copy shows the donor's name.
     body_overrides: {Data_CarBody column: value} written into the new car's body row (wheelbase, track widths, ride heights, bounding box: ModelWheelbase, ModelFrontTrackOuter, ..., PristineBoundingBoxMaxZ)."""
     packages = packages or []

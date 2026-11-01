@@ -27,7 +27,8 @@ from urllib.parse import parse_qs, urlparse
 
 import numpy as np
 
-HERE = Path(__file__).resolve().parent
+FROZEN = bool(getattr(sys, "frozen", False))                                   # running as the packaged program (PyInstaller)
+HERE = Path(getattr(sys, "_MEIPASS", "") or Path(__file__).resolve().parent)       # where index.html, app.js and vendor/ are
 sys.path.insert(0, str(HERE.parent))
 import carbin_geom as cg  # noqa: E402
 import carbin_library as cl  # noqa: E402
@@ -429,11 +430,35 @@ OPS = {
 }
 
 
+SETTINGS = Path(os.environ.get("APPDATA") or (Path.home() / ".config")) / "FH1CarbinEditor" / "settings.json"
+
+
+def load_settings() -> dict:
+    try:
+        return json.loads(SETTINGS.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def save_settings() -> None:
+    try:
+        SETTINGS.parent.mkdir(parents=True, exist_ok=True)
+        SETTINGS.write_text(json.dumps({"game": S.cfg["game"], "dlc": S.cfg["dlc"]}, indent=1), encoding="utf-8")
+    except OSError:
+        pass                                           # remembering the folders is a convenience only
+
+
+def default_out_dir() -> Path:
+    """Where exported packages go by default: next to where you ran the script, or (packaged program) in Documents."""
+    return Path.home() / "Documents" / "FH1 Carbin Editor" / "new_cars" if FROZEN else Path.cwd() / "new_cars"
+
+
 def set_library(game: str, dlc: list):
     game = (game or "").strip().strip('"')
     dlc = [d.strip().strip('"') for d in dlc if d and d.strip()]
     S.cfg = {"game": game, "dlc": dlc}
     S.lib = cl.Library(game or None, dlc) if (game or dlc) else None
+    save_settings()
 
 def origin_zip():
     need_loaded()
@@ -484,7 +509,7 @@ def clone_defaults():
     offer = 9000
     while offer in used["offer"]:
         offer += 1
-    return {"donor": media, "new_media": cc.same_length_name(media, used["media"]), "offer": offer, "staged": sorted(S.staged), "out_dir": str(Path.cwd() / "new_cars")}
+    return {"donor": media, "new_media": cc.same_length_name(media, used["media"]), "offer": offer, "staged": sorted(S.staged), "out_dir": str(default_out_dir())}
 
 
 def do_clone(a):
@@ -795,10 +820,26 @@ def main():
     a = ap.parse_args()
     if a.game or a.dlc:
         set_library(a.game or "", a.dlc)
+    else:                                                  # the folders of the last run
+        saved = load_settings()
+        if saved.get("game") or saved.get("dlc"):
+            try:
+                set_library(saved.get("game", ""), saved.get("dlc", []))
+            except Exception as e:  # noqa: BLE001
+                print(f"could not reopen the saved folders ({e}); set them again in the Open / Save tab")
     if a.file:
         p = Path(a.file)
         S.load(p.read_bytes(), p.name, p)
-    srv = ThreadingHTTPServer(("127.0.0.1", a.port), Handler)
+    srv = None
+    for port in range(a.port, a.port + 20):                # 8765, or the next free port
+        try:
+            srv = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+            break
+        except OSError:
+            continue
+    if srv is None:
+        raise SystemExit(f"no free port from {a.port} to {a.port + 19}")
+    a.port = srv.server_address[1]
     url = f"http://127.0.0.1:{a.port}/?token={TOKEN}"
     print(f"FH1 carbin editor running at {url}  (Ctrl+C to stop)\nOnly this address works: it carries a secret that keeps other web pages from using the editor.")
     if not a.no_browser:
@@ -810,4 +851,13 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit:
+        raise
+    except Exception:  # noqa: BLE001
+        if FROZEN:                                         # a double-clicked program would close its window before the error can be read
+            import traceback
+            traceback.print_exc()
+            input("\nThe editor stopped because of the error above. Press Enter to close this window.")
+        raise

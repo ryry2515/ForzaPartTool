@@ -1,6 +1,6 @@
 """carbin_geom.py - geometry-level editing of Forza Horizon 1 `.carbin` models (builds on fh1_carbin.py).
 
-Verified encodings (round-trip checked on the game's own cars, see selftest.py and the guide, section 6):
+Verified encodings (round-trip checked on the game's own cars, see selftest.py):
   position  : local = pos - section.offset; v = local / |bmax|; xyz = v/|v| (SNORM16), w = |v|  ->  world = xyz * w * |bmax| + offset ; bmin = -bmax
   uv0, uv1  : UNORM16 pairs; final = raw * scale + offset, with (off_u, scale_u, off_v, scale_v) per sub in sub.uvxf[0:4] (uv0) and [4:8] (uv1)
               uv0 addresses the car's baked atlas (scale 0 = one swatch texel); uv1 is the detail / tangent-space mapping
@@ -12,7 +12,7 @@ A section is a named part. Its sub-meshes (material name + LOD) index into one v
 `_lod0` and `_cockpit` carbins use the `lod0` pool.
 Header draw lists decide which sub-meshes are drawn at each LOD; every operation that changes a section's sub-meshes keeps them consistent.
 
-Everything here is untested in the game except through the round trips named above; test every edited car in the game (guide section 17).
+Everything here is untested in the game except through the round trips named above; test every edited car in the game.
 """
 from __future__ import annotations
 
@@ -850,7 +850,7 @@ LIGHT_SIZE = 32
 
 
 def lights(c: fc.Carbin) -> list[dict]:
-    """The 32-byte light records of a main carbin header (guide section 8): position, direction, role bytes, colour, glow size."""
+    """The 32-byte light records of a main carbin header: position, direction, role bytes, colour, glow size."""
     if not has_body_header(c):
         return []
     h = c.header
@@ -900,7 +900,7 @@ def remove_light(c: fc.Carbin, i: int) -> None:
 
 
 def exhausts(c: fc.Carbin) -> list[dict]:
-    """Exhaust / backfire emitters (guide section 6): position and side flag (2 = left, 3 = right). Count and flags must not change."""
+    """Exhaust / backfire emitters: position and side flag (2 = left, 3 = right). Count and flags must not change."""
     if not has_body_header(c):
         return []
     h = c.header

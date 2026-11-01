@@ -4,4 +4,6 @@ __pycache__/
 new_cars/
 *.egg-info/
 .venv/
-node_modules/
+node_modules/build/
+dist/
+*.spec

@@ -1,6 +1,6 @@
 """physdef.py - read and edit a Forza Horizon 1 car's physics files: `physicsdefinition.bin` (what the game loads) and `Physics/MAXData.xml` (its readable cousin).
 
-physicsdefinition.bin (big-endian; measured on all 178 base cars, guide section 40):
+physicsdefinition.bin (big-endian; measured on all 178 base cars):
     u32 version (1), u32 13, u32 1
     30 floats   header: [0] = 0.01, [1:10] a symmetric 3x3 and [10:19] a second 3x3 (inertia-like), [19:30] eleven more floats (meaning not decoded)
     u32 n       number of collision spheres, then u32 0
@@ -10,7 +10,7 @@ physicsdefinition.bin (big-endian; measured on all 178 base cars, guide section 
                 the convex hull (usually 24 points of 4 floats x, y, z, 0), face and index tables
 Everything this module changes keeps the tail byte for byte; it edits the header floats, the spheres and the hull points.
 
-Coordinates: the physics files use +z = front like the light records (guide section 8); carbin meshes use -z = front.
+Coordinates: the physics files use +z = front like the light records; carbin meshes use -z = front.
 
     pd = parse(data)
     pd.spheres[0].r *= 1.2

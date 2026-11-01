@@ -8,7 +8,7 @@ Work out what is free by looking at the atlas; guessing it from the models' uvs 
     out  = paint(atlas_xds_bytes, rgba, rect)           # new .xds bytes: image pasted into the rect, every mip level regenerated
 
 Which atlas a given material samples is NOT known from the files; the editor paints `nodamage` and `damage` (the atlases the body parts use) and the user chooses the material.
-[Untested in the game unless the guide says so]
+[Untested in the game unless the README says so]
 """
 from __future__ import annotations
 
@@ -70,7 +70,7 @@ def _raster(mask: np.ndarray, uv: np.ndarray, tris: np.ndarray) -> None:
         mask[y0:y1, x0:x1] |= (l1 >= -.02) & (l2 >= -.02) & (1 - l1 - l2 >= -.02)
 
 
-# Materials left out of the "read by a part" test: their shader reads a texture of its own (a WheelDiffuse / BrakeDiffuse / EngineDiffuse / BumperFrame / carbon fibre / grille / cloth sampler, guide section 7),
+# Materials left out of the "read by a part" test: their shader reads a texture of its own (a WheelDiffuse / BrakeDiffuse / EngineDiffuse / BumperFrame / carbon fibre / grille / cloth sampler),
 # or they are lamp, glass and badge materials whose atlas area is picture content that the white test (white_mask) already protects.
 OWN_TEXTURE = re.compile(r"rim|tire|tyre|rotor|caliper|brake|carbon|grille|tread|cloth|leather|mottled|headliner|gauge|stitch|wood|frame|under|bottom|window|glass|light|reflector|indicator|fog|head|reverse|emblem|badge", re.I)
 
