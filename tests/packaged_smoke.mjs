@@ -10,8 +10,9 @@ const listener = createServer();
 await new Promise(resolve => listener.listen(0, '127.0.0.1', resolve));
 const port = listener.address().port;
 await new Promise(resolve => listener.close(resolve));
-const child = spawn(executable, [], { windowsHide: true, stdio: 'ignore', env: {
+const child = spawn(executable, process.env.FH1_SMOKE_SCRIPT ? [process.env.FH1_SMOKE_SCRIPT] : [], { windowsHide: true, stdio: 'ignore', env: {
   ...process.env,
+  ...(process.env.FH1_SMOKE_APPDATA ? { APPDATA: process.env.FH1_SMOKE_APPDATA } : {}),
   WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-address=127.0.0.1 --remote-debugging-port=${port}`
 } });
 let socket;
@@ -66,13 +67,33 @@ try {
     }
     const cars = await evaluate('document.querySelectorAll(".car-row").length');
     if (cars <= 176) throw new Error('Combined game/DLC indexing failed: ' + cars);
-    await evaluate(`document.querySelector('#carSearch').value='ALF_8C';document.querySelector('#carSearch').dispatchEvent(new Event('input'));document.querySelector('.car-row').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,clientX:1100,clientY:350}));document.querySelector('#carContextMenu button').click()`);
+    await evaluate(`document.querySelector('#carSearch').value=${JSON.stringify(process.env.FH1_SMOKE_CAR || 'ALF_8C')};document.querySelector('#carSearch').dispatchEvent(new Event('input'));document.querySelector('.car-row').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,clientX:1100,clientY:350}));document.querySelector('#carContextMenu button').click()`);
     for (let attempt = 0; attempt < 160; attempt++) {
       if (await evaluate('document.querySelectorAll("#tree .sec").length > 0 && /parts$/.test(document.querySelector("#status").textContent)')) break;
       await delay(250);
     }
     const parts = await evaluate('document.querySelectorAll("#tree .sec").length');
     if (!parts) throw new Error('Packaged car import failed');
+    await evaluate(`document.querySelector('#optTex').value='auto';document.querySelector('#optTex').dispatchEvent(new Event('change'))`);
+    await delay(2000);
+    if (process.env.FH1_SMOKE_CLEAR_TEXTURES === '1') {
+      const before = await evaluate(`performance.getEntriesByType('resource').filter(entry=>entry.name.includes('/api/atlas?')).length`);
+      await evaluate(`document.querySelector('#btnDlc').click()`);
+      for (let attempt = 0; attempt < 200; attempt++) {
+        if (await evaluate(`[...document.querySelectorAll('#tab-file button')].some(button=>button.textContent==='Clear staged')`)) break;
+        await delay(100);
+      }
+      await evaluate(`[...document.querySelectorAll('#tab-file button')].find(button=>button.textContent==='Clear staged').click()`);
+      let after = before;
+      for (let attempt = 0; attempt < 80; attempt++) {
+        after = await evaluate(`performance.getEntriesByType('resource').filter(entry=>entry.name.includes('/api/atlas?')).length`);
+        if (after > before) break;
+        await delay(100);
+      }
+      if (after <= before) throw new Error('Clearing staged textures did not reload the displayed atlas');
+      ui.clearStagedReloadedTextures = true;
+    }
+    if (process.env.FH1_SMOKE_PASTE !== '0') {
     await evaluate(`document.querySelector('#tree .sec .row').click();[...document.querySelectorAll('#tab-part button')].find(button=>button.textContent.startsWith('Copy part')).click()`);
     for (let attempt = 0; attempt < 80; attempt++) {
       if (await evaluate('!!document.querySelector("#pastePart")')) break;
@@ -85,8 +106,10 @@ try {
     }
     const pastedParts = await evaluate('document.querySelectorAll("#tree .sec").length');
     if (pastedParts !== parts + 1) throw new Error('Packaged part paste failed');
+    ui.pastedParts = pastedParts;
+    }
     await delay(800);
-    ui = { ...ui, cars, importedParts: parts, pastedParts, errors: await evaluate('window.editorErrors'), configuredPaths: true };
+    ui = { ...ui, cars, importedParts: parts, errors: await evaluate('window.editorErrors'), configuredPaths: true };
     if (ui.errors.length) throw new Error(JSON.stringify(ui));
   }
   const image = await send('Page.captureScreenshot', { format: 'png' });

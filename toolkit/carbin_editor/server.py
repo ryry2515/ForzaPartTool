@@ -178,8 +178,9 @@ def paint_atlases(tex: dict):
             low = {n.lower(): n for n in z.namelist()}
             hit = [n for n in low.values() if re.search(rf"(^|/){name}{suffix}\.xds$", n, re.I)]
             for member in hit:
-                new = ap.paint(xlzx.read_member(z, member), rgba, rect)
                 rel = re.sub(rf"(?i)^media/cars/{re.escape(media)}/", "", member)
+                template = S.staged[rel] if rel in S.staged else xlzx.read_member(z, member)
+                new = ap.paint(template, rgba, rect)
                 if writable and not tex.get("stage_only"):
                     S.lib.write(o["source"], o["archive"], member, new)
                     z = origin_zip()
@@ -518,6 +519,23 @@ def atlas_member(z, name: str) -> str:
     raise KeyError(f"no {name} texture in this car's archive")
 
 
+def preview_texture_blob(name: str) -> bytes:
+    if name.startswith('shared:'):
+        allowed = {'carbonFiber.xds', 'grille1.xds', 'grille2.xds'}
+        member = name.split(':', 1)[1]
+        if member not in allowed or not (S.lib and S.lib.game):
+            raise ValueError('Unknown or unavailable shared preview texture')
+        archive = S.lib.game_zip('media/cars/shared.zip')
+        return xlzx.read_member(archive, find_member(archive, member))
+    if name not in {'nodamage', 'damage', 'lights', 'damagelights', 'interior', 'interior_emissive'}:
+        raise ValueError('Unknown preview atlas')
+    archive = origin_zip()
+    member = atlas_member(archive, name)
+    media, _, _ = origin_car()
+    relative = re.sub(rf'(?i)^media/cars/{re.escape(media)}/', '', member)
+    return S.staged.get(relative, xlzx.read_member(archive, member))
+
+
 def member_kind(n: str) -> str:
     e = n.lower().rsplit(".", 1)[-1] if "." in n else ""
     return "texture" if e == "xds" else "text" if e in ("xml", "txt", "html", "ini", "csv") else "model" if e == "carbin" else "image" if e in ("tga", "png", "jpg") else "other"
@@ -680,7 +698,7 @@ class Handler(BaseHTTPRequestHandler):
                     if (HERE / "vendor").resolve() not in p.parents or not p.is_file() or p.suffix not in (".js", ".txt", ""):
                         return self._send(404, b"not found", "text/plain")
                     return self._send(200, p.read_bytes(), "text/javascript; charset=utf-8" if p.suffix == ".js" else "text/plain; charset=utf-8")
-                if u.path in ("/app.js", "/editor_workflow.js", "/startup_diagnostics.js", "/library_actions.mjs", "/style.css"):
+                if u.path in ("/app.js", "/editor_workflow.js", "/startup_diagnostics.js", "/library_actions.mjs", "/viewer_materials.mjs", "/style.css"):
                     return self._send(200, (HERE / u.path[1:]).read_bytes(), "text/javascript; charset=utf-8" if u.path.endswith((".js", ".mjs")) else "text/css")
                 if u.path == "/api/summary":
                     need_loaded()
@@ -706,8 +724,7 @@ class Handler(BaseHTTPRequestHandler):
                     z = origin_zip()
                     return self._json({"members": [{"name": i.filename, "size": i.file_size, "kind": member_kind(i.filename)} for i in z.infolist()], "origin": S.origin})
                 if u.path == "/api/atlas":
-                    z = origin_zip()
-                    data = xlzx.read_member(z, atlas_member(z, q["name"]))
+                    data = preview_texture_blob(q['name'])
                     return self._send(200, xds.png_bytes(xds.decode(data)), "image/png")
                 if u.path == "/api/physics":
                     return self._json(physics_info())

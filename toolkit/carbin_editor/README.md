@@ -23,6 +23,8 @@ For API testing, use `--headless` (alias `--no-browser`); it prints an authentic
 
 ## The two places cars live
 
+**Texture preview (1.1.1):** `auto (materials)` chooses the image separately for each material. Lamp surfaces use the lamp atlas; badges and low-detail interior surfaces use the body atlas; cockpit materials use the interior atlas. Glass, chrome and solid trim use suitable preview materials, while carbon and grilles use the game's shared textures. Raw atlas inspection remains available in the texture selector. These are viewport approximations of the game's shaders. Texture painting previews staged images, keeps earlier staged images when another is added, and refreshes when staging is cleared.
+
 | location | what it is | read | save back |
 |---|---|---|---|
 | **Game** | the base game's cars (`media/cars/<Car>.zip`) | Games on Demand folder, `.iso` or extracted folder | **only an extracted game folder**: the editor replaces the car's file inside that zip (backup `.bak` made once) |

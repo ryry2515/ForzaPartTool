@@ -16,6 +16,8 @@ import xlzx
 
 @pytest.fixture
 def editor(tmp_path, monkeypatch):
+    if not GAME.exists():
+        pytest.skip('Local FH1 integration fixture is unavailable')
     monkeypatch.setattr(server, 'SETTINGS', tmp_path / 'settings.json')
     server.S = server.Session()
     server.S.lib = cl.Library(str(GAME), [])
@@ -113,3 +115,27 @@ def test_export_rejects_invalid_model(editor):
             sec.lod.bone[1] = 123
     with pytest.raises(ValueError, match='validation'):
         server.do_clone({})
+
+
+def test_texture_preview_reads_staged_edits(editor):
+    open_alfa(editor)
+    archive = server.origin_zip()
+    member = server.atlas_member(archive, 'nodamage')
+    original = xlzx.read_member(archive, member)
+    import xds
+    edited = xds.solid(original, 'black')
+    server.S.staged[Path(member).name] = edited
+    assert server.preview_texture_blob('nodamage') == edited
+    # This changes only the preview/staged export, never the source archive.
+    assert xlzx.read_member(archive, member) == original
+
+
+def test_multiple_staged_texture_paints_keep_previous_images(editor):
+    import base64
+    import xds
+    open_alfa(editor)
+    for rect, color in [([0.70, 0.70, 0.72, 0.72], [255, 0, 0, 255]), ([0.80, 0.80, 0.82, 0.82], [0, 255, 0, 255])]:
+        server.paint_atlases({'rgba': base64.b64encode(bytes(color)).decode(), 'w': 1, 'h': 1, 'rect': rect, 'atlases': ['nodamage'], 'stage_only': True})
+    image = xds.decode(server.preview_texture_blob('nodamage'))
+    y, x = int(image.shape[0] * 0.71), int(image.shape[1] * 0.71)
+    assert image[y, x, 0] > 220 and image[y, x, 1] < 30, 'Second paint removed the first staged image'

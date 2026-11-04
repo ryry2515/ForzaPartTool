@@ -5,6 +5,7 @@ new_cars/
 *.egg-info/
 .venv/
 .runtime-smoke/
+.texture-debug/
 *.log
 native-smoke.json
 packaged-*.png

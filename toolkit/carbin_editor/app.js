@@ -5,6 +5,7 @@ import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { createWorkflow } from './editor_workflow.js';
+import { previewMaterial } from './viewer_materials.mjs';
 
 const $ = (s, r = document) => r.querySelector(s);
 const el = (tag, attrs = {}, ...kids) => {
@@ -300,9 +301,11 @@ async function doTransform(mirror) {
 async function run(op, args, reload) {
   try {
     st.sum = await post('/api/op', { op, ...args });
+    if (args.texture) invalidateTextures();
     afterChange(reload);
     status(`${op} done`);
-  } catch (e) { status(`${op} failed: ${e.message}`, true); }
+    return true;
+  } catch (e) { status(`${op} failed: ${e.message}`, true); return false; }
 }
 
 function afterChange(reload) {
@@ -315,7 +318,7 @@ function afterChange(reload) {
   if (st.sel >= st.sum.sections.length) st.sel = -1;
   buildLodBar(); buildTree(); renderPart(); if (!place.group) renderModel(); renderLights(); renderExhausts(); renderFile();
   $('#fileName').textContent = `${st.sum.name} · ${(st.sum.size / 1024).toFixed(0)} KB`;
-  if (reload === 'all') { loadAll(); } else if (reload && reload.length) { Promise.all(reload.map(loadSection)).then(() => status('updated')); }
+  if (reload === 'all') { loadAll(); } else if (reload && reload.length) { Promise.all(reload.map(index => loadSection(index))).then(() => status('updated')); }
   else applyVisibility();
 }
 
@@ -633,7 +636,8 @@ async function commitModel() {
   }
   const meshes = collectMeshes(mapping);
   status(`sending ${meshes.length} mesh group(s)...`);
-  await run('add_model', { section: target, mode: $('#mMode').value, lods, flip_v: $('#mFlip').checked, auto_lods: $('#mAuto').checked, texture, uv0_mode: $('#mUv').value, meshes }, [target]);
+  const committed = await run('add_model', { section: target, mode: $('#mMode').value, lods, flip_v: $('#mFlip').checked, auto_lods: $('#mAuto').checked, texture, uv0_mode: $('#mUv').value, meshes }, [target]);
+  if (!committed) return;
   clearPlacement(); st.modelTarget = target; selectSection(target); setTab('model'); renderModel();
 }
 
@@ -667,7 +671,14 @@ async function loadCloneDefaults() {
   renderFile();
 }
 async function stageFile(clear) {
-  try { const r = await post('/api/stage', clear ? { clear: true } : {}); st.cloneDef = null; status(clear ? 'staged files cleared' : 'staged: ' + r.staged.join(', ')); loadCloneDefaults(); }
+  try {
+    const r = await post('/api/stage', clear ? { clear: true } : {});
+    if (clear) {
+      invalidateTextures(); texAtlasImg = null; st.free = null;
+      applyVisibility(); if ($('#mTexCanvas')) drawTexCanvas();
+    }
+    st.cloneDef = null; status(clear ? 'staged files cleared' : 'staged: ' + r.staged.join(', ')); loadCloneDefaults();
+  }
   catch (e) { status(e.message, true); }
 }
 async function buildNewCar() {
@@ -953,31 +964,42 @@ $('#filter').addEventListener('input', e => { st.filter = e.target.value; buildT
 for (const id of ['optWire', 'optBox', 'optLights', 'optEx', 'optHidden', 'optTex', 'optNormals', 'optBoxes']) $('#' + id).addEventListener('change', applyVisibility);
 
 // ---------------------------------------------------------------------------------------------- textures in the viewer, overlays, hide / isolate
-const ATLAS_RULES = [[/interior|seat|steering|dash|gauge|cage|speed_|tach_|fuel_|pedal|console/i, 'interior'], [/light|glassLTL|glassRTL|glassLHL|glassRHL|indicator|reverse/i, 'lights']];
-function atlasFor(secName) {
+function invalidateTextures() {
+  st.texVer++;
+  for (const texture of st.atlas.values()) if (texture) texture.dispose();
+  for (const material of st.texMats.values()) material.dispose();
+  st.atlas.clear(); st.texMats.clear();
+}
+function atlasFor(profile) {
   const mode = $('#optTex').value;
   if (mode === 'off') return null;
-  if (mode !== 'auto') return mode;
-  for (const [rx, n] of ATLAS_RULES) if (rx.test(secName)) return n;
-  return 'nodamage';
+  if (mode === 'auto') return profile.atlas;
+  if (mode === 'damage') return profile.atlas === 'nodamage' ? 'damage' : profile.atlas;
+  return mode; // Explicitly labelled raw-atlas inspection modes.
 }
 function atlasTexture(name) {
   if (st.atlas.has(name)) return st.atlas.get(name) || null;
+  const revision = st.texVer;
   st.atlas.set(name, null);
-  new THREE.TextureLoader().load('/api/atlas?name=' + name + '&v=' + st.texVer, tex => {
+  new THREE.TextureLoader().load('/api/atlas?name=' + encodeURIComponent(name) + '&v=' + revision, tex => {
+    if (revision !== st.texVer) { tex.dispose(); return; }
     tex.flipY = false; tex.colorSpace = THREE.SRGBColorSpace; tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.anisotropy = 4;
-    st.atlas.set(name, tex); st.texMats.clear(); applyVisibility();
-  }, undefined, () => { st.atlas.set(name, false); status('this car has no ' + name + ' texture (or it was opened from a file on disk)', true); });
+    st.atlas.set(name, tex);
+    for (const material of st.texMats.values()) material.dispose();
+    st.texMats.clear(); applyVisibility(); wake();
+  }, undefined, () => { if (revision === st.texVer) { st.atlas.set(name, false); status('Preview texture unavailable: ' + name, true); } });
   return null;
 }
 function meshMaterial(m, sec) {
-  const a = st.sum.origin ? atlasFor(sec.name) : null;
-  const tex = a ? atlasTexture(a) : null;
-  if (!tex) return material(m.userData.mat);
-  const key = a + '|' + m.userData.mat;
+  if (!st.sum.origin || $('#optTex').value === 'off') return material(m.userData.mat);
+  const profile = previewMaterial(m.userData.mat, sec.pool);
+  const atlas = atlasFor(profile);
+  const tex = atlas ? atlasTexture(atlas) : null;
+  if (atlas && !tex) return material(m.userData.mat);
+  const key = (atlas || 'solid') + '|' + m.userData.mat;
   if (!st.texMats.has(key)) {
-    const [, op] = matColor(m.userData.mat);
-    st.texMats.set(key, new THREE.MeshStandardMaterial({ map: tex, color: /^body$/i.test(m.userData.mat) ? 0xc62828 : 0xffffff, side: THREE.DoubleSide, roughness: 0.7, metalness: 0.1, transparent: op < 1, opacity: Math.max(op, 0.6) }));
+    const { atlas: unused, ...options } = profile;
+    st.texMats.set(key, new THREE.MeshStandardMaterial({ ...options, map: tex, side: THREE.DoubleSide }));
   }
   return st.texMats.get(key);
 }
@@ -1028,7 +1050,7 @@ async function imageToRGBA(file, w, h) {
 }
 async function afterArchiveWrite(r) {
   status(`wrote ${r.saved.member.split('/').pop()} into ${r.saved.zip.split(/[\\/]/).pop()}; backup ${r.saved.backup || 'already existed'}`);
-  st.arch = null; st.texVer++; st.atlas.clear(); st.texMats.clear(); applyVisibility();
+  st.arch = null; invalidateTextures(); applyVisibility();
 }
 function archiveWritable() { const o = st.sum && st.sum.origin; const s = o && st.lib && st.lib.sources.find(x => x.id === o.source); return s && s.writable ? '' : (s ? s.why || 'read only' : 'unknown location'); }
 

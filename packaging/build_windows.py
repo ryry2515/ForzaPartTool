@@ -37,7 +37,7 @@ def main():
             "--exclude-module", "matplotlib", "--exclude-module", "scipy", "--exclude-module", "pytest", "--exclude-module", "PIL"]
     for m in MODULES:
         args += ["--hidden-import", m]
-    for f in ("index.html", "app.js", "library_actions.mjs", "editor_workflow.js", "startup_diagnostics.js", "style.css"):
+    for f in ("index.html", "app.js", "library_actions.mjs", "viewer_materials.mjs", "editor_workflow.js", "startup_diagnostics.js", "style.css"):
         args += ["--add-data", f"{ED / f}{sep}."]
     args += ["--add-data", f"{ED / 'vendor'}{sep}vendor"]
     pi.run(args)
