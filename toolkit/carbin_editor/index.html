@@ -13,6 +13,9 @@
 <body>
 <header id="top">
   <strong>FH1 Carbin Editor</strong>
+  <button id="btnCars">Cars</button>
+  <button id="btnSettings">Settings</button>
+  <button id="btnDlc">Export DLC</button>
   <label class="btn">Open .carbin<input id="fileIn" type="file" accept=".carbin" hidden></label>
   <button id="btnUndo" title="Ctrl+Z">Undo</button>
   <button id="btnRedo" title="Ctrl+Y">Redo</button>
@@ -45,6 +48,9 @@
   </section>
   <aside id="right">
     <nav id="tabs">
+      <button data-tab="cars">Cars</button>
+      <button data-tab="settings">Settings</button>
+      <button data-tab="parts">Copy parts</button>
       <button data-tab="part" class="on">Part</button>
       <button data-tab="model">Add model</button>
       <button data-tab="lights">Lights</button>
@@ -55,6 +61,9 @@
       <button data-tab="strings">Strings</button>
       <button data-tab="file">Open / Save</button>
     </nav>
+    <div id="tab-cars" class="tab" hidden></div>
+    <div id="tab-settings" class="tab" hidden></div>
+    <div id="tab-parts" class="tab" hidden></div>
     <div id="tab-part" class="tab"></div>
     <div id="tab-model" class="tab" hidden></div>
     <div id="tab-lights" class="tab" hidden></div>
@@ -70,6 +79,7 @@
 <input id="objIn" type="file" accept=".obj" hidden>
 <input id="modelIn" type="file" accept=".fbx,.glb,.gltf,.obj" hidden>
 <datalist id="materials"></datalist>
+<script src="/startup_diagnostics.js"></script>
 <script type="module" src="/app.js"></script>
 </body>
 </html>

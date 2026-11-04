@@ -72,3 +72,16 @@ footer#status.err { color: var(--bad); }
 .mrow.sel { background: color-mix(in srgb, var(--accent) 22%, transparent); }
 textarea { width: 100%; min-height: 220px; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 5px; font: 12px/1.4 Consolas, monospace; padding: 6px; }
 .prev { max-width: 100%; border: 1px solid var(--line); background: repeating-conic-gradient(#8883 0 25%, transparent 0 50%) 50% / 16px 16px; }
+.car-list { max-height: 48vh; overflow: auto; border: 1px solid var(--line); border-radius: 5px; }
+.car-row { display: flex; flex-direction: column; gap: 4px; width: 100%; padding: 9px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; text-align: left; }
+.car-row small { color: var(--muted); font-size: 11px; }
+.car-row.selected { border-left: 3px solid var(--accent); }
+#carSearch { width: 100%; }
+.context-menu { position: fixed; z-index: 100; background: var(--panel); border: 1px solid var(--line); padding: 5px; border-radius: 6px; box-shadow: 0 5px 25px #0006; }
+.context-menu button { display: block; width: 100%; text-align: left; padding: 7px; border: 0; }
+.model-choice { display: block; margin: 5px 0; max-width: 100%; overflow-wrap: anywhere; }
+.donor-list { max-height: 260px; overflow: auto; margin: 8px 0; }
+.donor-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+#tab-parts > select, #tab-parts > input { width: 100%; margin: 6px 0; }
+#tab-settings .field input { width: 100%; }
+#tab-parts .field label { overflow-wrap: anywhere; font-size: 11px; }

@@ -4,6 +4,7 @@ import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+import { createWorkflow } from './editor_workflow.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const el = (tag, attrs = {}, ...kids) => {
@@ -18,6 +19,7 @@ const el = (tag, attrs = {}, ...kids) => {
 
 // ---------------------------------------------------------------------------------------------- state
 const st = {
+  viewGeneration: 0,
   sum: null, sel: -1, hidden: new Set(), lods: new Set([0, 1, 2, 3, 4, 5]), groups: new Map(), geom: new Map(),
   matCache: new Map(), atlas: new Map(), texMats: new Map(), texVer: 0, arch: null, filter: '', selLight: -1, objText: null, objInfo: null, objName: '',
 };
@@ -36,8 +38,8 @@ const post = (path, body) => api(path, { method: 'POST', body: JSON.stringify(bo
 
 // ---------------------------------------------------------------------------------------------- three.js scene
 const canvas = $('#gl');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'low-power' });     // light on the graphics card: no anti-aliasing, the low-power GPU where there are two
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
 const scene = new THREE.Scene();
 const dark = !matchMedia('(prefers-color-scheme: light)').matches;
 scene.background = new THREE.Color(dark ? 0x101215 : 0xe8ebee);
@@ -63,9 +65,29 @@ let selBox = null;
 function resize() {
   const v = $('#view'); const w = v.clientWidth, h = v.clientHeight;
   renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+  wake(1500);
 }
 new ResizeObserver(resize).observe($('#view'));
-(function loop() { controls.update(); renderer.render(scene, camera); requestAnimationFrame(loop); })();
+// Draw only while something changes (a drag, a click, a finished download, a loaded picture) and for a moment after it, at most 30 times a second.
+// The first version redrew every frame forever, which keeps the graphics card at full load even when nothing moves.
+let awakeUntil = performance.now() + 3000, lastDraw = 0, glLost = false;
+const wake = (ms = 2000) => { awakeUntil = Math.max(awakeUntil, performance.now() + ms); };
+for (const ev of ['pointerdown', 'pointermove', 'pointerup', 'wheel', 'keydown', 'input', 'change', 'click', 'resize']) addEventListener(ev, () => wake(), true);
+addEventListener('load', () => wake(), true);                           // pictures and textures finishing in the background
+controls.addEventListener('change', () => wake());
+tc.addEventListener('change', () => wake());
+const _fetch = window.fetch.bind(window);
+window.fetch = (...a) => _fetch(...a).then(r => { wake(2500); return r; }, e => { wake(); throw e; });
+canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); glLost = true; status('The graphics context was lost (a graphics driver reset). Reload the page; if this repeats, restart the editor (it draws with the processor unless you start it with --gpu).', true); });
+canvas.addEventListener('webglcontextrestored', () => { glLost = false; wake(3000); });
+(function loop() {
+  requestAnimationFrame(loop);
+  const now = performance.now();
+  if (glLost || now > awakeUntil || now - lastDraw < 33) return;
+  lastDraw = now;
+  controls.update();
+  renderer.render(scene, camera);
+})();
 
 function matColor(name) {
   const n = name.toLowerCase();
@@ -86,8 +108,9 @@ function material(name) {
 }
 
 // ---------------------------------------------------------------------------------------------- loading geometry
-async function loadSection(si) {
+async function loadSection(si, generation = st.viewGeneration) {
   const buf = await (await api('/api/geometry?sec=' + si)).arrayBuffer();
+  if (generation !== st.viewGeneration || !st.sum?.sections[si]) return;
   const dv = new DataView(buf); const hl = dv.getUint32(0, true);
   const head = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 4, hl)));
   const base = 4 + hl, n = head.verts;
@@ -112,12 +135,13 @@ async function loadSection(si) {
 }
 
 async function loadAll(indices) {
+  const generation = st.viewGeneration;
   const list = indices ?? st.sum.sections.map(s => s.index);
   status(`loading ${list.length} parts...`);
   let i = 0;
-  const worker = async () => { while (i < list.length) { const si = list[i++]; try { await loadSection(si); } catch (e) { status(e.message, true); } } };
+  const worker = async () => { while (i < list.length && generation === st.viewGeneration) { const si = list[i++]; try { await loadSection(si, generation); } catch (e) { if (generation === st.viewGeneration) status(e.message, true); } } };
   await Promise.all([worker(), worker(), worker(), worker()]);
-  status(`${st.sum.name}: ${st.sum.sections.length} parts`);
+  if (generation === st.viewGeneration) status(`${st.sum.name}: ${st.sum.sections.length} parts`);
 }
 
 function applyVisibility() {
@@ -225,12 +249,13 @@ const val = id => parseFloat($('#' + id).value) || 0;
 
 function renderPart() {
   const box = $('#tab-part'); box.replaceChildren();
-  if (!st.sum) { box.append(el('p', { class: 'muted' }, 'Open a .carbin file.')); return; }
+  if (!st.sum) { box.append(el('p', { class: 'muted' }, 'Open Cars and right-click a car → Import.')), box.append(el('button', { onclick: () => setTab('cars') }, 'Browse cars')); return; }
   const s = st.sum.sections[st.sel];
   if (!s) { box.append(el('p', { class: 'muted' }, 'Click a part in the list or in the view.')); return; }
   const dl = $('#materials'); dl.replaceChildren(...[...new Set(st.sum.sections.flatMap(x => x.subs.map(b => b.material)))].sort().map(m => el('option', { value: m })));
   box.append(
     el('h3', {}, 'Part'),
+    el('div', { class: 'field' }, el('button', { onclick: () => workflow.copyCurrent() }, 'Copy part (Ctrl+C)'), el('button', { onclick: () => workflow.openPaste() }, 'Paste part… (Ctrl+V)')),
     el('div', { class: 'field' }, el('label', {}, 'name'), el('input', { id: 'pName', value: s.name }), el('button', { onclick: () => run('rename_section', { section: s.index, name: $('#pName').value }, []) }, 'Rename')),
     el('p', { class: 'muted' }, `pivot (${s.offset.map(v => v.toFixed(3)).join(', ')}) · half extents (${s.bmax.map(v => v.toFixed(3)).join(', ')}) · ${s.verts} vertices · pool ${s.pool}. The game finds some parts by name (for example hooda, exhaustLa): rename with care.`),
     el('h3', {}, 'Move, rotate, scale'),
@@ -281,6 +306,13 @@ async function run(op, args, reload) {
 }
 
 function afterChange(reload) {
+  st.viewGeneration++;
+  for (const [index, group] of st.groups) {
+    if (index >= st.sum.sections.length) {
+      world.remove(group); group.traverse(object => object.geometry?.dispose()); st.groups.delete(index);
+    }
+  }
+  if (st.sel >= st.sum.sections.length) st.sel = -1;
   buildLodBar(); buildTree(); renderPart(); if (!place.group) renderModel(); renderLights(); renderExhausts(); renderFile();
   $('#fileName').textContent = `${st.sum.name} · ${(st.sum.size / 1024).toFixed(0)} KB`;
   if (reload === 'all') { loadAll(); } else if (reload && reload.length) { Promise.all(reload.map(loadSection)).then(() => status('updated')); }
@@ -612,17 +644,11 @@ addEventListener('keydown', e => {
 });
 
 // ---------------------------------------------------------------------------------------------- open (game + DLC) and save
-async function refreshLibrary() { try { st.lib = await api('/api/library'); } catch (e) { st.lib = { sources: [], config: { game: '', dlc: [] } }; } renderFile(); }
-
-async function libPick(source, car) {
-  st.libSel = { source, car, cars: st.libSel?.source === source ? st.libSel.cars : (await api('/api/library/cars?source=' + encodeURIComponent(source))).cars, members: [], q: st.libSel?.q || '' };
-  if (car) st.libSel.members = (await api(`/api/library/members?source=${encodeURIComponent(source)}&car=${encodeURIComponent(car)}`)).members;
+async function refreshLibrary() {
+  st.lib = await api('/api/library');
+  workflow.renderSettings();
   renderFile();
-}
-
-async function libOpen(source, m) {
-  try { status('reading...'); st.sum = await post('/api/library/open', { source, archive: m.archive, member: m.member }); resetView(); setTab('part'); }
-  catch (e) { status(e.message, true); }
+  await workflow.loadCars();
 }
 
 async function saveBack(force = false) {
@@ -650,7 +676,7 @@ async function buildNewCar() {
     status('building the new car (copying files, checking the database)...');
     const r = await post('/api/clone', { new_media: v('ncName'), offer: parseInt(v('ncOffer')), out_dir: v('ncOut'), include_open: document.getElementById('ncOpen').checked, display_name: v('ncTitle'), short_name: v('ncShort'),
       formats: ['xenia', 'stfs'].filter(f => document.getElementById('nc_' + f).checked) });
-    st.cloneResult = r; renderFile(); status(`new car built: id ${r.car_id}, ${r.rows} database rows, ${r.files} files`);
+    st.cloneResult = r; st.cloneDef = null; loadCloneDefaults(); status(`new car built: id ${r.car_id}, ${r.rows} database rows, ${r.files} files`);
   } catch (e) { st.cloneResult = { error: e.message, problems: e.problems || [] }; renderFile(); status(e.message, true); }
 }
 function cloneSection() {
@@ -683,24 +709,6 @@ function renderFile() {
   const lib = st.lib || { sources: [], config: { game: '', dlc: [] } };
   const o = st.sum && st.sum.origin;
   const src = o && lib.sources.find(s => s.id === o.source);
-  box.append(
-    el('h3', {}, '1. Where to look'),
-    el('div', { class: 'field' }, el('label', {}, 'game'), el('input', { id: 'cfgGame', placeholder: 'game folder (extracted copy to save into it)', value: lib.config.game || '' })),
-    el('div', { class: 'field' }, el('label', {}, 'DLC'), el('input', { id: 'cfgDlc', placeholder: '...\\4D5309C9\\00000002 (one or more, separated by ;)', value: (lib.config.dlc || []).join(';') })),
-    el('div', { class: 'field' }, el('button', { class: 'primary', onclick: async () => { try { st.lib = await post('/api/library/config', { game: $('#cfgGame').value, dlc: $('#cfgDlc').value.split(';') }); st.libSel = null; renderFile(); status('library updated'); } catch (e) { status(e.message, true); } } }, 'Apply')),
-    el('p', { class: 'muted' }, 'The game can be a Games on Demand folder or an .iso (read only) or an EXTRACTED game folder (read and save). DLC is the Xenia content folder 4D5309C9\\00000002 or any folder with packages in it.'));
-  if (lib.sources.length) {
-    const sel = st.libSel || {};
-    box.append(el('h3', {}, '2. Open a car'),
-      el('div', { class: 'field' }, el('label', {}, 'location'), el('select', { onchange: e => e.target.value && libPick(e.target.value, '') },
-        el('option', { value: '' }, 'choose...'), lib.sources.map(s => el('option', { value: s.id, selected: s.id === sel.source }, s.label + (s.writable ? '' : ' (read only)'))))));
-    if (sel.source) {
-      const q = (sel.q || '').toLowerCase();
-      box.append(el('div', { class: 'field' }, el('label', {}, 'car'), el('input', { placeholder: 'filter', value: sel.q || '', oninput: e => { st.libSel.q = e.target.value; renderFile(); document.querySelector('#tab-file input[placeholder=filter]').focus(); } })),
-        el('div', { style: 'max-height:160px;overflow:auto;border:1px solid var(--line);border-radius:5px' }, (sel.cars || []).filter(c => c.toLowerCase().includes(q)).slice(0, 300).map(c => el('div', { class: 'row', style: 'padding:3px 8px;cursor:pointer;' + (c === sel.car ? 'background:var(--panel2)' : ''), onclick: () => libPick(sel.source, c) }, c))));
-      if (sel.car) box.append(el('div', { class: 'field' }, sel.members.map(m => el('button', { onclick: () => libOpen(sel.source, m) }, m.label))));
-    }
-  }
   if (st.sum) {
     const probs = st.sum.problems;
     box.append(el('h3', {}, '3. Save'),
@@ -898,11 +906,13 @@ function setTab(name) {
   for (const b of document.querySelectorAll('#tabs button')) b.classList.toggle('on', b.dataset.tab === name);
   for (const t of document.querySelectorAll('.tab')) t.hidden = t.id !== 'tab-' + name;
 }
-for (const b of document.querySelectorAll('#tabs button')) b.addEventListener('click', () => { setTab(b.dataset.tab); if (b.dataset.tab === 'archive') renderArchive(); if (b.dataset.tab === 'strings') renderStrings(); if (b.dataset.tab === 'physics') renderPhysics(); if (b.dataset.tab === 'skeleton') renderSkeleton(); });
+for (const b of document.querySelectorAll('#tabs button')) b.addEventListener('click', () => { setTab(b.dataset.tab); if (b.dataset.tab === 'archive') renderArchive(); if (b.dataset.tab === 'strings') renderStrings(); if (b.dataset.tab === 'physics') renderPhysics(); if (b.dataset.tab === 'skeleton') renderSkeleton(); if (b.dataset.tab === 'parts') workflow.renderClipboard(); });
 
 function resetView() {
+  st.viewGeneration++;
+  clearPlacement();
   st.sel = -1; st.hidden.clear(); st.lodReset = true; st.selLight = -1; st.arch = null; st.atlas.clear(); st.texMats.clear(); st.texVer++; st.free = null; st.overwrite = new Set(); st.texRect = null;
-  for (const g of st.groups.values()) world.remove(g);
+  for (const g of st.groups.values()) { world.remove(g); g.traverse(object => object.geometry?.dispose()); }
   st.groups.clear();
   buildLodBar(); buildTree(); renderPart(); renderLights(); renderExhausts(); renderFile();
   $('#fileName').textContent = `${st.sum.name} · ${(st.sum.size / 1024).toFixed(0)} KB`;
@@ -1070,7 +1080,7 @@ async function showMember(name) {
 // ---------------------------------------------------------------------------------------------- strings tab (read only)
 async function renderStrings() {
   const box = $('#tab-strings'); box.replaceChildren();
-  if (!st.lib || !st.lib.config.game) { box.append(el('p', { class: 'muted' }, 'Set the game folder in the Open / Save tab to browse the game\'s string tables (car names, makes, upgrades...).')); return; }
+  if (!st.lib || !st.lib.config.game) { box.append(el('p', { class: 'muted' }, 'Set the game folder in Settings to browse the game\'s string tables (car names, makes, upgrades...).')); return; }
   st.strLang = st.strLang || 'en';
   let tables = [];
   try { tables = (await api('/api/strings?lang=' + st.strLang)).tables; } catch (e) { box.append(el('p', { class: 'warn' }, e.message)); }
@@ -1092,10 +1102,18 @@ async function fillStrings() {
   } catch (e) { box.replaceChildren(el('p', { class: 'warn' }, e.message)); }
 }
 
+const workflow = createWorkflow({ $, el, st, api, post, status, setTab, resetView, afterChange, selectSection });
+$('#btnCars').addEventListener('click', () => setTab('cars'));
+$('#btnSettings').addEventListener('click', () => { workflow.renderSettings(); setTab('settings'); });
+$('#btnDlc').addEventListener('click', () => { renderFile(); setTab('file'); if (!st.sum) status('Import a car before exporting DLC.', true); });
+
 async function init() {
   renderPart(); renderModel();
   const s = await api('/api/status');
   await refreshLibrary();
   if (s.open) { st.sum = await api('/api/summary'); resetView(); }
+  workflow.renderClipboard();
+  if (st.lib.needs_setup) { setTab('settings'); status(st.lib.setup_error || 'Set your FH1 game path in Settings to start.', true); }
+  else if (!s.open) setTab('cars');
 }
 init().catch(e => status(e.message, true));

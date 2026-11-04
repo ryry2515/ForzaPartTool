@@ -3,17 +3,23 @@
 A `.carbin` file is a Forza Horizon 1 car model: the body, doors, bumpers, glass, interior and so on, as named parts made of triangles, plus the car's light points and exhaust flame points.
 This editor lets you look at a car in 3D, move and reshape its parts, **drop in your own model (FBX, GLB / glTF or OBJ), drag it into place and add it onto the car**, and save the result either into a **DLC** package or into an **extracted copy of the game**.
 
-It is a local web app: a Python backend (standard library plus `numpy`) and a three.js viewer in your browser. Everything stays on your computer; the server only listens on `127.0.0.1`.
+The Windows release is a dedicated desktop application with an embedded WebView2 viewport. It uses a Python backend and Three.js internally; no external browser opens. Everything stays on your computer; the backend only listens on `127.0.0.1`. Closing the window stops it. Install source dependencies with `python -m pip install -r packaging/requirements-windows.txt`.
 
 ```
-python toolkit/carbin_editor/server.py                                                    # then open the printed address
+python toolkit/carbin_editor/server.py                                                    # opens its own desktop window
 python toolkit/carbin_editor/server.py --game "<game folder>" --dlc "<...\4D5309C9\00000002>"
 python toolkit/carbin_editor/server.py Car.carbin                                         # open one file at start
 ```
 
 three.js and its model loaders are bundled in `vendor/three/` (MIT, unmodified files from npm), so the editor needs no internet and makes no request to any other site. Your model data never leaves your computer.
 
-**The address matters.** Each run the program prints an address ending in `?token=...`; open exactly that one (the browser opens it for you unless you pass `--no-browser`). The secret keeps other web pages from using the editor; it is described, with the rest of the protections, in `SECURITY.md` at the root of the repository. To run scripts against the API, set the environment variable `FH1_EDITOR_TOKEN` before starting the server and send it as the cookie `fh1ed`.
+**First run:** Settings opens automatically if the game path is missing or invalid. Browse to your FH1 game and DLC folders, then save. Cars searches the base game and all configured DLC together; right-click **Import**. Your own installed assets supply the list.
+
+**Copy parts:** select a part and use **Copy part (Ctrl+C)**. You can open another car and paste there. Alternatively, right-click a donor car and choose **Copy parts from this car**; inspecting and copying the donor does not replace your active car or its edits. Paste creates an independently selectable part and maps its materials to the destination. Geometry uses destination colour swatches; donor textures, animation/skeleton bindings and collision are not transferred. Effective detail UVs are retained. Undo removes a paste; redo restores it.
+
+**Export DLC:** creates a new car with its own identity and files. It validates edited models, refuses to overwrite existing exports, and reserves IDs from previously exported packages as well as installed DLC. Previous output locations are remembered in Settings storage. Main/driving and LOD0/menu models are separate: stage each edited file you want included.
+
+For API testing, use `--headless` (alias `--no-browser`); it prints an authenticated loopback address. Set `FH1_EDITOR_TOKEN` and send it as cookie `fh1ed` when scripting. Normal desktop mode manages this internally. See `SECURITY.md` for the request protections.
 
 ## The two places cars live
 
@@ -22,7 +28,7 @@ three.js and its model loaders are bundled in `vendor/three/` (MIT, unmodified f
 | **Game** | the base game's cars (`media/cars/<Car>.zip`) | Games on Demand folder, `.iso` or extracted folder | **only an extracted game folder**: the editor replaces the car's file inside that zip (backup `.bak` made once) |
 | **DLC** | cars inside installed or built packages (`Media/DLCZips/*.zip`, files `media/cars/<Media>/...`) | package folders and console (STFS) packages | package **folders** (the Xenia content folder `4D5309C9\00000002`, or a built pack) |
 
-Use the **Open / Save** tab: set the game folder and the DLC folder, pick a location, pick a car, pick a file (`<Car>.carbin` is the main model used while driving, `_lod0` the close-up used in photo mode and menus, `_cockpit` the cockpit view).
+Use **Settings** to set game and DLC paths, then **Cars** to import a car or a specific file (`<Car>.carbin` is the main model used while driving, `_lod0` the close-up used in photo mode and menus, `_cockpit` the cockpit view).
 The **Save into game / Save into DLC** button writes the edited file back where it came from. Only that one file inside the zip changes: every other file is copied byte for byte, in the same order, with its Xbox compression marker intact.
 Nothing is written while Xenia is running (the editor checks). "Download .carbin" and "Save to path" save a copy anywhere else.
 

@@ -4,6 +4,11 @@ __pycache__/
 new_cars/
 *.egg-info/
 .venv/
+.runtime-smoke/
+*.log
+native-smoke.json
+packaged-*.png
+packaged-*.json
 node_modules/build/
 dist/
 *.spec

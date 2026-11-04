@@ -336,12 +336,12 @@ class DLCPackage:
 def list_packages(content_dir: Path) -> list[DLCPackage]:
     """All FH1 DLC under …/4D5309C9/00000002 (STFS files and extracted folders)."""
     d = Path(content_dir)
-    if d.name.lower() != "00000002":
+    if d.name.lower() != "00000002" and (d / '00000002').is_dir():
         d = d / "00000002"
     out = []
     if not d.is_dir():
         return out
-    for p in sorted(d.iterdir()):
+    for p in ([d] if (d / 'Media').is_dir() else sorted(d.iterdir())):
         try:
             if p.is_file():
                 with p.open("rb") as f:

@@ -1,8 +1,8 @@
-"""Forza Horizon 1 carbin editor: a local web app (Python backend, three.js viewer).
+"""Forza Horizon 1 carbin editor: a native desktop window with an embedded three.js viewer.
 
     python toolkit/carbin_editor/server.py [FILE.carbin] [--game GAME_FOLDER] [--port 8765] [--no-browser]
 
-Open the printed address in a browser (it opens by itself unless --no-browser). Everything stays on your computer: the server listens on 127.0.0.1 only.
+Normal mode opens a dedicated desktop window. --headless runs only the local API. Everything stays on your computer: the server listens on 127.0.0.1 only.
 Back up a file before you overwrite it; "Save as" never overwrites without making a .bak copy first.
 See toolkit/carbin_editor/README.md for what each tool does and what is untested in the game.
 """
@@ -20,7 +20,6 @@ import secrets
 import struct
 import sys
 import threading
-import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -43,6 +42,7 @@ import gr2_skeleton as gr2s  # noqa: E402
 import xds  # noqa: E402
 import xlzx  # noqa: E402
 import fh1_carbin as fc  # noqa: E402
+from carbin_parts import PartClipboard
 
 MAX_UNDO = 20
 MAX_BODY = 512 * 1024 * 1024                 # largest request body accepted (a model with textures is a few MB)
@@ -69,6 +69,10 @@ class Session:
         self.origin: dict | None = None          # where the open file came from: {source, archive, member}
         self.lib: cl.Library | None = None
         self.cfg = {"game": "", "dlc": []}
+        self.setup_error = ''
+        self.clipboard = PartClipboard()
+        self.last_pasted = None
+        self.export_dirs = []
 
     def load(self, data: bytes, name: str, path: Path | None = None, origin: dict | None = None):
         c = fc.parse(data)
@@ -88,7 +92,8 @@ class Session:
     def info(self) -> dict:
         s = cg.summary(self.carbin)
         s.update({"name": self.name, "path": str(self.path) if self.path else "", "undo": len(self.undo), "redo": len(self.redo),
-                  "problems": cg.validate(self.carbin), "size": len(fc.build(self.carbin)), "origin": self.origin})
+                  "problems": cg.validate(self.carbin), "size": len(fc.build(self.carbin)), "origin": self.origin,
+                  "clipboard": self.clipboard.info(), "last_pasted": self.last_pasted})
         return s
 
 
@@ -435,7 +440,12 @@ SETTINGS = Path(os.environ.get("APPDATA") or (Path.home() / ".config")) / "FH1Ca
 
 def load_settings() -> dict:
     try:
-        return json.loads(SETTINGS.read_text(encoding="utf-8"))
+        saved = json.loads(SETTINGS.read_text(encoding="utf-8"))
+        if not isinstance(saved, dict) or not isinstance(saved.get('game', ''), str) or not isinstance(saved.get('dlc', []), list):
+            return {}
+        if not all(isinstance(p, str) for p in saved.get('dlc', [])):
+            return {}
+        return saved
     except (OSError, ValueError):
         return {}
 
@@ -443,7 +453,7 @@ def load_settings() -> dict:
 def save_settings() -> None:
     try:
         SETTINGS.parent.mkdir(parents=True, exist_ok=True)
-        SETTINGS.write_text(json.dumps({"game": S.cfg["game"], "dlc": S.cfg["dlc"]}, indent=1), encoding="utf-8")
+        SETTINGS.write_text(json.dumps({"game": S.cfg["game"], "dlc": S.cfg["dlc"], "export_dirs": S.export_dirs}, indent=1), encoding="utf-8")
     except OSError:
         pass                                           # remembering the folders is a convenience only
 
@@ -456,9 +466,33 @@ def default_out_dir() -> Path:
 def set_library(game: str, dlc: list):
     game = (game or "").strip().strip('"')
     dlc = [d.strip().strip('"') for d in dlc if d and d.strip()]
+    for folder in dlc:
+        if not Path(folder).is_dir():
+            raise ValueError(f'DLC folder does not exist: {folder}')
+    library = cl.Library(game or None, dlc) if (game or dlc) else None
     S.cfg = {"game": game, "dlc": dlc}
-    S.lib = cl.Library(game or None, dlc) if (game or dlc) else None
+    S.lib = library
+    S.setup_error = ''
     save_settings()
+
+
+def library_info():
+    return {"sources": S.lib.sources() if S.lib else [], "config": S.cfg,
+            "needs_setup": not bool(S.lib and S.lib.game), "setup_error": S.setup_error}
+
+
+def inspect_library_model(a):
+    if not S.lib:
+        raise ValueError('Set your game path in Settings first')
+    # Reading a donor must never call Session.load: it would replace active edits/staged files.
+    return fc.parse(S.lib.read(a['source'], a['archive'], a['member']))
+
+
+def paste_part(a):
+    S.last_pasted = S.clipboard.paste(S.carbin, a.get('material_map'), a.get('name', ''), a.get('translate', (0, 0, 0)))
+
+
+OPS['paste_part'] = paste_part
 
 def origin_zip():
     need_loaded()
@@ -502,9 +536,26 @@ def origin_car():
     return m.group(1), m.group(2), S.lib._pk[o["source"].split(":", 1)[1]]
 
 
+def export_packages(out_dir=None):
+    """Reserve IDs from installed DLC and previous exports, including after restart."""
+    packs = list(S.lib._pk.values())
+    seen = {str(p.path.resolve()).lower() for p in packs}
+    roots = [default_out_dir(), *map(Path, S.export_dirs)]
+    if out_dir:
+        roots.append(Path(out_dir))
+    for root in roots:
+        for folder in (root / 'xenia', root / 'console'):
+            for package in fsrc.list_packages(folder):
+                key = str(package.path.resolve()).lower()
+                if key not in seen:
+                    packs.append(package)
+                    seen.add(key)
+    return packs
+
+
 def clone_defaults():
     media, _, pkg = origin_car()
-    packs = list(S.lib._pk.values())
+    packs = export_packages()
     used = fsrc.scan_used_ids(S.lib.game, packs, log=lambda *_: None)
     offer = 9000
     while offer in used["offer"]:
@@ -517,14 +568,30 @@ def do_clone(a):
     files = dict(S.staged)
     if a.get("include_open", True):
         files[rel] = fc.build(S.carbin)
-    packs = list(S.lib._pk.values())
+    for filename, blob in files.items():
+        if filename.lower().endswith('.carbin'):
+            try:
+                problems = cg.validate(fc.parse(blob))
+            except Exception as exc:
+                raise ValueError(f'Model validation failed for {filename}: {exc}') from exc
+            if problems:
+                raise ValueError(f'Model validation failed for {filename}: ' + '; '.join(problems))
+    formats = a.get('formats', ['xenia'])
+    if not isinstance(formats, list) or not formats or any(f not in ('xenia', 'stfs') for f in formats):
+        raise ValueError("Choose Xenia folder and/or console STFS as an export format")
+    root = Path(a['out_dir']).resolve()
+    package_name = dlcb.package_name(int(a['offer']))
+    targets = ([root / 'xenia' / package_name, root / 'xenia' / 'Headers' / '00000002' / (package_name + '.header')] if 'xenia' in formats else [])
+    if 'stfs' in formats:
+        targets.append(root / 'console' / package_name)
+    for target in targets:
+        if target.exists():
+            raise FileExistsError(f'Export already exists: {target}. Choose a new offer number or output folder.')
+    packs = export_packages(root)
     res = cc.clone_car(S.lib.game, media, a["new_media"], int(a["offer"]), packs, donor_package=pkg, replace_files=files, log=lambda *_: None, body_overrides=dict(S.body_over) or None,
                        display_name=(a.get("display_name") or "").strip() or None, short_name=(a.get("short_name") or "").strip() or None)
     if res["report"]["problems"]:
         return {"error": "the new car's database rows collide with existing rows", "problems": res["report"]["problems"]}
-    formats = a.get("formats") or ["xenia"]
-    if not formats or any(f not in ("xenia", "stfs") for f in formats):
-        raise ValueError("formats must be a list of 'xenia' and / or 'stfs'")
     display = (a.get("display_name") or "").strip() or f"{a['new_media']} (copy of {media})"
     out = {}
     problems = []
@@ -537,6 +604,9 @@ def do_clone(a):
         out["stfs"] = str(dlcb.write_stfs(res["files"], stfs_path, display, f"{a['new_media']}: edited copy of {media}"))
     rep = res["report"]
     out.update({"problems": problems, "car_id": rep["ids"]["car"], "rows": sum(rep["tables"].values()), "tables": len(rep["tables"]), "files": rep["files"], "edited": sorted(files)})
+    remembered = str(root)
+    S.export_dirs = [folder for folder in S.export_dirs if folder != remembered] + [remembered]
+    save_settings()
     return out
 
 
@@ -599,7 +669,9 @@ class Handler(BaseHTTPRequestHandler):
                 if u.path in ("/", "/index.html"):
                     html = (HERE / "index.html").read_bytes()
                     m = re.search(rb'<script type="importmap">(.*?)</script>', html, re.S)
-                    pin = "'sha256-" + base64.b64encode(hashlib.sha256(m.group(1)).digest()).decode() + "'" if m else ""
+                    # HTML parsing normalizes CRLF before CSP checks inline script text.
+                    script = m.group(1).replace(b'\r\n', b'\n').replace(b'\r', b'\n') if m else b''
+                    pin = "'sha256-" + base64.b64encode(hashlib.sha256(script).digest()).decode() + "'" if m else ""
                     csp = ("default-src 'none'; script-src 'self' " + pin + "; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self' blob: data:; "
                            "frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
                     return self._send(200, html, "text/html; charset=utf-8", {"Content-Security-Policy": csp})
@@ -608,13 +680,13 @@ class Handler(BaseHTTPRequestHandler):
                     if (HERE / "vendor").resolve() not in p.parents or not p.is_file() or p.suffix not in (".js", ".txt", ""):
                         return self._send(404, b"not found", "text/plain")
                     return self._send(200, p.read_bytes(), "text/javascript; charset=utf-8" if p.suffix == ".js" else "text/plain; charset=utf-8")
-                if u.path in ("/app.js", "/style.css"):
-                    return self._send(200, (HERE / u.path[1:]).read_bytes(), "text/javascript; charset=utf-8" if u.path.endswith(".js") else "text/css")
+                if u.path in ("/app.js", "/editor_workflow.js", "/startup_diagnostics.js", "/library_actions.mjs", "/style.css"):
+                    return self._send(200, (HERE / u.path[1:]).read_bytes(), "text/javascript; charset=utf-8" if u.path.endswith((".js", ".mjs")) else "text/css")
                 if u.path == "/api/summary":
                     need_loaded()
                     return self._json(S.info())
                 if u.path == "/api/status":
-                    return self._json({"open": S.carbin is not None, "library": S.lib is not None, "name": S.name})
+                    return self._json({"open": S.carbin is not None, "library": S.lib is not None, "name": S.name, "clipboard": S.clipboard.info()})
                 if u.path == "/api/geometry":
                     need_loaded()
                     return self._send(200, geometry_blob(int(q["sec"])), "application/octet-stream")
@@ -674,7 +746,7 @@ class Handler(BaseHTTPRequestHandler):
                     need_loaded()
                     return self._json(clone_defaults())
                 if u.path == "/api/library":
-                    return self._json({"sources": S.lib.sources() if S.lib else [], "config": S.cfg})
+                    return self._json(library_info())
                 if u.path == "/api/library/cars":
                     return self._json({"cars": S.lib.cars(q["source"])})
                 if u.path == "/api/library/members":
@@ -697,6 +769,18 @@ class Handler(BaseHTTPRequestHandler):
         body = self.rfile.read(n) if n else b""
         try:
             with S.lock:
+                if u.path == '/api/parts/inspect':
+                    car = inspect_library_model(json.loads(body))
+                    return self._json(cg.summary(car))
+                if u.path == '/api/parts/copy':
+                    a = json.loads(body)
+                    if a.get('source'):
+                        car = inspect_library_model(a)
+                        label = Path(a['member']).name
+                    else:
+                        need_loaded()
+                        car, label = S.carbin, S.name
+                    return self._json({'clipboard': S.clipboard.copy(car, a['section'], label)})
                 if u.path == "/api/open":
                     S.load(body, self.headers.get("X-Name", "model.carbin"))
                     return self._json(S.info())
@@ -749,7 +833,7 @@ class Handler(BaseHTTPRequestHandler):
                 if u.path == "/api/library/config":
                     a = json.loads(body)
                     set_library(a.get("game", ""), a.get("dlc", []))
-                    return self._json({"sources": S.lib.sources() if S.lib else [], "config": S.cfg})
+                    return self._json(library_info())
                 if u.path == "/api/library/open":
                     a = json.loads(body)
                     data = S.lib.read(a["source"], a["archive"], a["member"])
@@ -813,41 +897,36 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("file", nargs="?")
-    ap.add_argument("--game", help="the game: a Games on Demand folder, an .iso or an EXTRACTED game folder (only that can be saved into)")
-    ap.add_argument("--dlc", action="append", default=[], help="a DLC content folder (the 4D5309C9\\00000002 folder), repeatable")
-    ap.add_argument("--port", type=int, default=8765)
-    ap.add_argument("--no-browser", action="store_true")
+    ap.add_argument("--game", help="FH1 GoD folder, ISO or extracted game folder")
+    ap.add_argument("--dlc", action="append", default=[])
+    ap.add_argument("--port", type=int, default=0)
+    ap.add_argument("--no-browser", "--headless", dest="headless", action="store_true", help="run only the local API for testing")
     a = ap.parse_args()
-    if a.game or a.dlc:
-        set_library(a.game or "", a.dlc)
-    else:                                                  # the folders of the last run
-        saved = load_settings()
-        if saved.get("game") or saved.get("dlc"):
-            try:
-                set_library(saved.get("game", ""), saved.get("dlc", []))
-            except Exception as e:  # noqa: BLE001
-                print(f"could not reopen the saved folders ({e}); set them again in the Open / Save tab")
+    saved = {"game": a.game or "", "dlc": a.dlc} if a.game or a.dlc else load_settings()
+    S.export_dirs = [p for p in saved.get('export_dirs', []) if isinstance(p, str)] if isinstance(saved.get('export_dirs', []), list) else []
+    if saved:
+        try:
+            set_library(saved.get("game", ""), saved.get("dlc", []))
+        except Exception as exc:
+            S.cfg = {"game": saved.get("game", ""), "dlc": saved.get("dlc", [])}
+            S.setup_error = str(exc)
     if a.file:
         p = Path(a.file)
         S.load(p.read_bytes(), p.name, p)
-    srv = None
-    for port in range(a.port, a.port + 20):                # 8765, or the next free port
+    server = ThreadingHTTPServer(("127.0.0.1", a.port), Handler)
+    server.daemon_threads = True
+    url = f"http://127.0.0.1:{server.server_address[1]}/?token={TOKEN}"
+    if a.headless:
+        print(url, flush=True)
         try:
-            srv = ThreadingHTTPServer(("127.0.0.1", port), Handler)
-            break
-        except OSError:
-            continue
-    if srv is None:
-        raise SystemExit(f"no free port from {a.port} to {a.port + 19}")
-    a.port = srv.server_address[1]
-    url = f"http://127.0.0.1:{a.port}/?token={TOKEN}"
-    print(f"FH1 carbin editor running at {url}  (Ctrl+C to stop)\nOnly this address works: it carries a secret that keeps other web pages from using the editor.")
-    if not a.no_browser:
-        threading.Timer(0.6, lambda: webbrowser.open(url)).start()
-    try:
-        srv.serve_forever()
-    except KeyboardInterrupt:
-        pass
+            server.serve_forever()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            server.server_close()
+    else:
+        from editor_desktop import run_desktop
+        run_desktop(server, url, SETTINGS.parent / "desktop-profile")
 
 
 if __name__ == "__main__":
@@ -855,9 +934,15 @@ if __name__ == "__main__":
         main()
     except SystemExit:
         raise
-    except Exception:  # noqa: BLE001
-        if FROZEN:                                         # a double-clicked program would close its window before the error can be read
-            import traceback
+    except Exception:
+        import traceback
+        if FROZEN:
+            import ctypes
+            message = traceback.format_exc()
+            log = SETTINGS.parent / "startup-error.log"
+            log.parent.mkdir(parents=True, exist_ok=True)
+            log.write_text(message, encoding="utf-8")
+            ctypes.windll.user32.MessageBoxW(None, f"The editor could not start.\n\n{message.splitlines()[-1]}\n\nDetails: {log}", "FH1 Carbin Editor", 0x10)
+        else:
             traceback.print_exc()
-            input("\nThe editor stopped because of the error above. Press Enter to close this window.")
         raise
