@@ -5,7 +5,7 @@
 
 <p align="center"><img alt="Windows" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078d4"> <img alt="Python" src="https://img.shields.io/badge/Python-3.10%2B-3776ab"> <img alt="License" src="https://img.shields.io/badge/license-MIT-green"></p>
 
-<p align="center"><a href="#screenshots">Screenshots</a> · <a href="#features">Features</a> · <a href="#file-formats">File formats</a> · <a href="#getting-started">Getting started</a> · <a href="#building-from-source">Building</a> · <a href="#known-limitations">Limitations</a></p>
+<p align="center"><a href="#features">Features</a> · <a href="#file-formats">File formats</a> · <a href="#getting-started">Getting started</a> · <a href="#building-from-source">Building</a> · <a href="#known-limitations">Limitations</a></p>
 
 > You need your own copy of the game (a Games on Demand folder, an `.iso` or an extracted folder). Nothing from the game is in this repository. Modding is at your own risk: keep a backup of your game files and your save, and test one change at a time. Not affiliated with Microsoft, Turn 10 or Playground Games.
 
