@@ -1,6 +1,9 @@
-ForzaPartTool - test build 17
+ForzaPartTool - test build 18
 
-What is new in build 17:
+What is new in build 18:
+- Your ForzaPartTool logo: the program icon, the mark in the header and the page icon. README has the logo at the top.
+
+Build 17:
 - The program is now called ForzaPartTool (ForzaPartTool.exe, ForzaPartTool-<version>-windows.zip). Your settings are kept: the settings folder keeps its old name. The logo is left for you: see packaging/assets/README.md.
 
 Build 16:

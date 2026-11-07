@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/images/logo.png" alt="ForzaPartTool" width="160"></p>
+
 <h1 align="center">ForzaPartTool</h1>
 
 <p align="center">A Windows desktop app for editing the cars of <b>Forza Horizon 1</b> (Xbox 360, on Xenia or a modded console).<br>
