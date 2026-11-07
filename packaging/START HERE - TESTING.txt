@@ -1,6 +1,9 @@
-ForzaPartTool - test build 19
+ForzaPartTool - test build 20
 
-What is new in build 19:
+What is new in build 20:
+- The sharp-interior preview no longer paints the dial faces onto the rear-view mirror (seen on the 2006 Focus ST): the mirror is now plain dark glass and the gauges stay in the instrument cluster.
+
+Build 19:
 - The roof lining of the sharp-interior preview is drawn behind the body's roof panel, so it can no longer flicker through the roof as a pale patch.
 
 Build 18:

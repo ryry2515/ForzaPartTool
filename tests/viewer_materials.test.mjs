@@ -13,6 +13,8 @@ assert.equal(previewMaterial('carbon_fiber').atlas, 'shared:carbonFiber.xds');
 assert.equal(previewMaterial('grille1').atlas, 'shared:grille1.xds');
 // Low-detail seat/dash images live in nodamage, not the separate cockpit atlas.
 assert.equal(previewMaterial('interior', 'lod').atlas, 'nodamage');
+// the rear-view mirror must not sample the atlas (its UVs cover all of it, which put the dials on the mirror)
+assert.equal(previewMaterial('mirrorMiddle', 'lod0', 'cockpit').atlas, null);
 // the roof lining of the sharp interior is pushed back in depth so it cannot flicker through the body's roof panel
 assert.equal(previewMaterial('headliner', 'lod0', 'cockpit').atlas, 'interior');
 assert.equal(previewMaterial('headliner', 'lod0', 'cockpit').polygonOffset, true);
@@ -34,7 +36,8 @@ for (const name of ['cloth', 'leather', 'plastic', 'badge', 'bump_leather', 'bum
   assert.deepEqual(previewMaterial(name, 'lod', 'body'), previewMaterial(name, 'lod'), name);
 }
 // Other shaders of real FH1 cockpit files (Fiesta): these also read the interior atlas, not the white body atlas.
-for (const name of ['bump_plastic2', 'mottled', 'mirrorMiddle', 'gauge_needle', 'reflector']) {
+// (mirrorMiddle is no longer in this list: its UVs cover the whole atlas, so it is drawn as dark glass; see the test below.)
+for (const name of ['bump_plastic2', 'mottled', 'gauge_needle', 'reflector']) {
   assert.equal(previewMaterial(name, 'lod0', 'cockpit').atlas, 'interior', name);
 }
 // Dial faces are lit by the emissive atlas; the digital display is a plain dark screen.

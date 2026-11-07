@@ -14,6 +14,9 @@ export function previewMaterial(name, pool = 'lod', context = 'body') {
     if (/^(?:z_)?gauge_emissive(?:_alpha)?$/.test(n)) return { ...p, atlas: 'interior', emissiveAtlas: 'interior_emissive', roughness: 0.4 };
     // The digital display is drawn live by the game from many small textures, so only a dark screen can be shown.
     if (n === 'digital_gauge') return { ...p, atlas: null, color: 0x0b0d10, roughness: 0.15, metalness: 0.3 };
+    // The rear-view mirror glass: its UVs span the whole interior atlas (it is a live reflection in the game), so sampling the atlas painted the
+    // dial faces and every other texture onto the mirror ("the speedo is on the mirror"). Shown as a dark reflective glass instead.
+    if (n === 'mirrormiddle') return { ...p, atlas: null, color: 0x14181d, roughness: 0.08, metalness: 0.9 };
     // The steering wheel's "reflector" is the AIRBAG label (its UVs sit on that label in the interior atlas), not a lamp.
     if (n === 'reflector') return { ...p, atlas: 'interior' };
     // The roof lining lies right under the body's roof panel. Drawn at the same depth it flickered through the roof as a pale patch (light
