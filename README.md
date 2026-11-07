@@ -9,13 +9,6 @@
 
 > You need your own copy of the game (a Games on Demand folder, an `.iso` or an extracted folder). Nothing from the game is in this repository. Modding is at your own risk: keep a backup of your game files and your save, and test one change at a time. Not affiliated with Microsoft, Turn 10 or Playground Games.
 
-## Screenshots
-
-![ForzaPartTool with a car open: part list, 3D view with wheels at the corners, and the Part tab](docs/images/editor.jpg)
-*The editor: every part with its LODs on the left, the car in 3D (wheels drawn at the corners), tools on the right.*
-
-![The sharp interior of the cockpit model, with lit dials](docs/images/cockpit.jpg)
-*The sharp interior from the cockpit model, with lit dials, shown while editing the driving model.*
 ## Features
 
 **Viewer**
