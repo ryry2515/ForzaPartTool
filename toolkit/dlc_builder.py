@@ -82,17 +82,23 @@ def zipmount_xml(offer: int, extra_mounts: list[tuple[str, str]] = (), strings: 
 def new_merge_db(base_gamedb: bytes, tables: list[str]) -> sqlite3.Connection:
     """An empty database that has only the named tables, created with the base game's own CREATE statements.
     Insert your rows, then call finish_merge_db(). Only add rows: a primary key the game already has breaks the boot-time merge."""
-    f = tempfile.NamedTemporaryFile(suffix=".slt", delete=False)
-    f.write(base_gamedb)
-    f.close()
-    src = sqlite3.connect(f.name)
-    out = sqlite3.connect(tempfile.NamedTemporaryFile(suffix=".slt", delete=False).name)
-    for t in tables:
-        row = src.execute("select sql from sqlite_master where type='table' and name=?", (t,)).fetchone()
-        if not row:
-            raise KeyError(f"table {t} is not in the game database")
-        out.execute(row[0])
-    src.close()
+    import fh1_sources as srcmod
+    src = srcmod.open_db(base_gamedb)                 # in memory: no temporary copy is left behind
+    handle = tempfile.NamedTemporaryFile(suffix=".slt", delete=False)
+    handle.close()
+    out = sqlite3.connect(handle.name)                # the merge database is a real file until finish_merge_db() reads and removes it
+    try:
+        for t in tables:
+            row = src.execute("select sql from sqlite_master where type='table' and name=?", (t,)).fetchone()
+            if not row:
+                raise KeyError(f"table {t} is not in the game database")
+            out.execute(row[0])
+    except Exception:
+        out.close()
+        Path(handle.name).unlink(missing_ok=True)
+        raise
+    finally:
+        src.close()
     return out
 
 
@@ -105,7 +111,9 @@ def finish_merge_db(db: sqlite3.Connection) -> bytes:
     db.commit()
     path = db.execute("pragma database_list").fetchone()[2]
     db.close()
-    return Path(path).read_bytes()
+    data = Path(path).read_bytes()
+    Path(path).unlink(missing_ok=True)                # the temporary merge file is not needed any more
+    return data
 
 
 def build_files(offer: int, *, merge_db: bytes, car_zips: dict[str, dict[str, bytes]] | None = None,

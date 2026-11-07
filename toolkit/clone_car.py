@@ -251,13 +251,16 @@ def clone_car(game: src.BaseGame, donor_media: str, new_media: str, offer: int, 
 def check_merge(base_blob: bytes, merge_blob: bytes, other_merges=()) -> list[str]:
     """Merge the new database (and the other packages' databases) into a copy of the game database the way the game does: any key collision is reported."""
     problems = []
+    import os
     tmp = tempfile.NamedTemporaryFile(suffix=".slt", delete=False)
     tmp.write(base_blob)
     tmp.close()
     con = sqlite3.connect(tmp.name)
+    extra = []
     try:
         for blob, strict in [(m, False) for m in other_merges] + [(merge_blob, True)]:
             f = tempfile.NamedTemporaryFile(suffix=".slt", delete=False)
+            extra.append(f.name)
             f.write(blob)
             f.close()
             con.execute(f"attach database '{f.name}' as m")
@@ -272,6 +275,11 @@ def check_merge(base_blob: bytes, merge_blob: bytes, other_merges=()) -> list[st
             con.execute("detach database m")
     finally:
         con.close()
+        for name in [tmp.name] + extra:               # these temporary copies used to be left behind on every call
+            try:
+                os.unlink(name)
+            except OSError:
+                pass
     return problems
 
 

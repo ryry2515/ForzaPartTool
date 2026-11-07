@@ -30,10 +30,22 @@ def zread(zf: zipfile.ZipFile, name: str) -> bytes:
 
 
 def open_db(blob: bytes) -> sqlite3.Connection:
+    """The database in `blob` as an in-memory connection. The temporary file SQLite needs to read it is deleted before returning:
+    it used to be left behind on every call (3-9 MB each), which filled the user's temp folder with tens of gigabytes."""
     f = tempfile.NamedTemporaryFile(suffix=".slt", delete=False)
-    f.write(blob); f.close()
-    con = sqlite3.connect(f.name)
-
+    try:
+        f.write(blob); f.close()
+        disk = sqlite3.connect(f.name)
+        try:
+            con = sqlite3.connect(":memory:")
+            disk.backup(con)
+        finally:
+            disk.close()
+    finally:
+        try:
+            os.unlink(f.name)
+        except OSError:
+            pass
     return con
 
 

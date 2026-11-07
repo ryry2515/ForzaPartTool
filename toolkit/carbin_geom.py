@@ -102,7 +102,8 @@ def sub_triangles(sub: fc.Sub, vertex_count: int) -> np.ndarray:
 
 def final_uv(raw: np.ndarray, xf4) -> np.ndarray:
     ou, su, ov, sv = xf4
-    return np.column_stack([raw[:, 0] * su + ou, raw[:, 1] * sv + ov])
+    with np.errstate(invalid="ignore"):             # unused LOD placeholders carry a "no transform" marker (FLT_MAX, -inf): NaN here is expected and cleaned by the caller
+        return np.column_stack([raw[:, 0] * su + ou, raw[:, 1] * sv + ov])
 
 
 def is_swatch(sub: fc.Sub) -> bool:
