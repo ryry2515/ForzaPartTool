@@ -1,35 +1,105 @@
-﻿# FH1 Carbin Editor and modding toolkit
+﻿# FH1 Carbin Editor
 
-Open-source tools for modding **Forza Horizon 1** (Xbox 360, running on Xenia or a modded console).
+A Windows desktop app for editing the cars of **Forza Horizon 1** (Xbox 360, played on Xenia or a modded console): look at a car in 3D, move and reshape its parts, add your own models, and export the result as a new DLC car or back into a copy of the game. Plus the Python libraries behind it for the game's file formats.
 
-- **Carbin editor** (`toolkit/carbin_editor/`): look at a car model in 3D, move and reshape its parts, drop in your own model (FBX, GLB or OBJ) and place it with a gizmo, edit lights and exhausts, collision physics, skeleton and animations, and export the result as a DLC package (Xenia folder and/or console package) or save it into an extracted copy of the game.
-- **Toolkit** (`toolkit/`): Python libraries and command-line tools for the game's formats (containers, LZX archives, string tables, carbin models, `.xds` textures, Granny `.gr2`, STFS packages, the database) and for building DLC packages. Standard library plus `numpy`.
+[Features](#features) · [File formats](#file-formats) · [Getting started](#getting-started) · [Building from source](#building-from-source) · [Tests](#tests) · [Known limitations](#known-limitations) · [Credits](#credits)
 
-## Download and run (Windows, no Python needed)
+> You need your own copy of the game (a Games on Demand folder, an `.iso` or an extracted folder). Nothing from the game is in this repository. Modding is at your own risk: keep a backup of your game files and your save, and test one change at a time. Not affiliated with Microsoft, Turn 10 or Playground Games.
 
-1. Download `FH1-Carbin-Editor-<version>-windows.zip` from the [Releases](../../releases) page and extract it anywhere.
-2. Double-click `FH1 Carbin Editor.exe`. A black window opens (leave it open) and the editor opens in your browser.
-3. In the editor's **Open / Save** tab enter your game folder (and your Xenia DLC folder if you like). The editor remembers them.
+## Features
 
-You need your own copy of the game (a Games on Demand folder, an `.iso` or an extracted folder). Nothing from the game is included. Windows may warn about an unrecognised app: the program is built from this source with `packaging/build_windows.py`, and the release page lists the SHA-256 of the zip.
+**Viewer**
 
-## Run from source (any system with Python 3.10+)
+| | |
+|---|---|
+| 3D car view | Every part with its LODs (0-5), per-part show/hide/isolate, filter box, selection box, normals and wireframe |
+| Textures | Per-material textures from the car's own atlases ("all textures"), damaged versions, and single-atlas inspection |
+| Wheels | The file holds one wheel at the centre; the viewer draws it at the four corners from the car's wheelbase and track (or hides it) |
+| Interior | The driving model's low-detail interior can be replaced in the preview by the sharp interior of the cockpit model, with lit dials; a model switcher opens the driving, close-up/photo and cockpit files |
+
+**Editing**
+
+| | |
+|---|---|
+| Parts | Move / rotate / scale with a gizmo or numbers, mirror, rename, merge into another part, copy a part from another car, delete or retarget sub-meshes, hide a part from the game; every step undoable |
+| Both models | Edits can be applied to the driving model and the close-up/photo model together |
+| Custom models | Import FBX, GLB/glTF or OBJ, place it with the gizmo, and add it as its own part (stays selectable and movable) or merge it into an existing part; automatic LODs; optional texture painted into the car's atlas |
+| Lights and exhausts | Light records and exhaust emitters, with position and colour |
+| Physics | Collision spheres, hull and body numbers (wheelbase, track, ride height, bounding box) |
+| Other tabs | Skeleton and animations (`.gr2`), archive browser, string tables, texture viewer and replacement |
+
+**Saving**
+
+| | |
+|---|---|
+| Export car ZIP | A replacement car archive for an extracted game or DLC copy |
+| Apply to existing car | Writes into a writable game or DLC folder (a `.bak` is made once) |
+| Export as a new DLC car | A new car with its own ID and database rows, as a Xenia folder and/or console package, using your edited files; the output folder is remembered |
+
+Also: a loading bar while cars load, **Unload car**, and remembered game and DLC folders. Saved settings live in `%APPDATA%\FH1CarbinEditor` and never leave your computer.
+
+## File formats
+
+| Extension | What | Read | Write |
+|---|---|---|---|
+| `.carbin` | Car models (sections, LOD vertex pools, sub-meshes, draw lists, lights, exhausts) | yes | yes |
+| `.xds` | Xbox 360 textures (DXT1/3/5, 8888) | yes | yes |
+| `.zip` (car archives) | Xbox LZX-compressed members | yes | yes |
+| `.gr2` | Granny skeletons and animations | yes | yes |
+| `physicsdefinition.bin`, `MAXData.xml` | Collision shapes and body data | yes | yes |
+| `gamedb.slt` | The game database (copied into merge databases) | yes | merge DB |
+| string tables (LSB2) | Car and UI text | yes | no |
+| STFS, Xenia DLC folders | DLC packages | yes | yes |
+
+## Getting started
+
+Requirements: Windows 10/11 and the Microsoft Edge **WebView2 Runtime** (already on current Windows 11; the app tells you if it is missing). No Python needed.
+
+1. Download `FH1-Carbin-Editor-<version>-windows.zip` from [Releases](../../releases) and extract it anywhere.
+2. Run `FH1 Carbin Editor.exe`. The editor opens in its own window; it does not use your browser.
+3. **Settings:** choose your FH1 game (folder, `.iso` or GoD container) and, for Xenia, your DLC folder (`...\4D5309C9\00000002`). Press *Save paths & load cars*.
+4. **Cars:** right-click a car → *Import*, then edit. The program is built from this source with `packaging/build_windows.py`; the release page lists the SHA-256 of the zip.
+
+Windows may warn about an unrecognised app because the exe is not code-signed.
+
+## Building from source
 
 ```
-pip install numpy
-python toolkit/selftest.py "<your 4D5309C9 game folder>"            # checks that everything works on your files first
-python toolkit/carbin_editor/server.py --game "<game folder>" --dlc "<...\4D5309C9\00000002>"
+pip install numpy pywebview pyinstaller
+python toolkit/selftest.py "<your 4D5309C9 game folder>"        # checks the libraries against your files first
+python toolkit/carbin_editor/server.py --game "<game folder>" --dlc "<...\4D5309C9\00000002>"    # run from source
+python packaging/build_windows.py --version 2.0.0                # the Windows program, in build/
 ```
 
-Open the address the editor prints (it carries a secret, see `SECURITY.md`). Details: `toolkit/carbin_editor/README.md` and `toolkit/README.md`.
+Python 3.10+. The libraries need only the standard library and `numpy`; the desktop window needs `pywebview`. three.js is bundled, so the editor works offline. More: `toolkit/carbin_editor/README.md` (editor) and `toolkit/README.md` (libraries and command-line tools).
 
-To build the Windows program yourself: `pip install pyinstaller numpy` and `python packaging/build_windows.py`.
+## Tests
 
-## What has been seen working in the game
+```
+pip install pytest numpy
+python -m pytest tests          # needs your game folder for the integration tests (they skip without it)
+node --test tests/*.test.mjs
+```
 
-Adding a real model and cubes onto a car; painting a texture into a car atlas; copying a base-game car into a new DLC car that was bought and driven; a plain-text car name; changing the wheelbase; changing collision spheres (the car stops earlier at barriers). The editor's README lists what is only tested offline. Always test one change at a time and keep a backup of your save.
+The Python and JavaScript suites cover the carbin reader/writer, every edit operation, saving and exporting, the library, settings, and the viewer's material rules. A larger check (every carbin of the base game and both DLC packs opened, rebuilt and validated, and the edit operations run at random on hundreds of cars) found and fixed the bugs listed in the release notes.
 
-## Notes
+## Known limitations
 
-- Not affiliated with Microsoft, Turn 10 or Playground Games. See `THIRD_PARTY_NOTICES.md` for licenses of bundled code (three.js is bundled, so the editor needs no internet).
-- License: MIT (`LICENSE`), except `toolkit/gr2.py` (MPL-2.0 header) and the bundled three.js files (MIT).
+- What has been seen working **in the game**: adding models onto a car, painting a texture into a car atlas, copying a car into a new DLC car that was bought and driven, a plain-text car name, changing wheelbase, changing collision spheres. The viewer is an approximation of the game's materials and lighting. Anything else is tested offline only.
+- New shop upgrades cannot be created yet (existing upgrade slots work). Part names must be plain ASCII without spaces, because the file format only stores them that way.
+- `FOR_F350SuperDuty_08_lod0.carbin` is an empty placeholder in the game and cannot be opened.
+- Forza Horizon 6 cars are not supported yet.
+- Windows only (the desktop window uses WebView2); the libraries and the server run anywhere Python does.
+
+## Security
+
+The editor serves itself to its window on `127.0.0.1` only, with a random per-run secret. See [`SECURITY.md`](SECURITY.md).
+
+## Credits
+
+- [three.js](https://threejs.org/) (MIT), bundled for the 3D view.
+- Granny `.gr2` handling follows the layout documented by the community (`toolkit/gr2.py`, MPL-2.0).
+- [Xenia](https://xenia.jp/) for running the game, and the Forza modding community for format knowledge.
+- Related project for newer Forza games: [ForzaTech Studio](https://github.com/D3FEKT/ForzaTechStudio) by D3FEKT (Forza Motorsport and Horizon 5 / 2023 formats).
+
+See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for licences of bundled code. Licence: MIT ([`LICENSE`](LICENSE)), except `toolkit/gr2.py` (MPL-2.0 header) and the bundled three.js files (MIT).

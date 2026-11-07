@@ -1,5 +1,7 @@
 # Security
 
+> The Windows app shows the editor in its own window (WebView2) and starts this local server for it; it never opens your browser. The rules below apply to that server whether you use the window or run it from source.
+
 ## What the editor does and does not expose
 
 `toolkit/carbin_editor/server.py` is a local web app. It can read your game and DLC folders and write into the car archives, the output folders and paths you give it, so it protects itself:

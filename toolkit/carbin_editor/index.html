@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>FH1 Carbin Editor</title>
+<title>FH1 Carbin Editor v2 — test build 15</title>
 <link rel="stylesheet" href="/style.css">
 <script type="importmap">
 { "imports": { "three": "/vendor/three/build/three.module.js",
@@ -14,14 +14,19 @@
 <header id="top">
   <strong>FH1 Carbin Editor</strong>
   <button id="btnCars">Cars</button>
+  <button id="btnUnload">Unload car</button>
   <button id="btnSettings">Settings</button>
-  <button id="btnDlc">Export DLC</button>
+  <button id="btnCustomModel">Custom model…</button>
+  <button id="btnApplyCar">Apply to existing car</button>
+  <button id="btnCarZip">Export car ZIP…</button>
+  <button id="btnDlc">Export as new DLC car</button>
   <label class="btn">Open .carbin<input id="fileIn" type="file" accept=".carbin" hidden></label>
   <button id="btnUndo" title="Ctrl+Z">Undo</button>
   <button id="btnRedo" title="Ctrl+Y">Redo</button>
   <button id="btnSave">Download .carbin</button>
   <button id="btnExport">Export OBJ</button>
   <span id="fileName" class="muted">no file open</span>
+  <select id="siblings" hidden title="The other models of this car: driving, close-up / photo, and cockpit (the sharp interior)"></select>
 </header>
 <main>
   <aside id="left">
@@ -35,7 +40,9 @@
   <section id="view">
     <div id="viewOpts">
       <label><input type="checkbox" id="optWire"> wireframe</label>
-      <label>texture <select id="optTex"><option value="auto" selected>auto (materials)</option><option value="off">off</option><option value="damage">damage</option><option value="nodamage">inspect body atlas</option><option value="lights">inspect lamp atlas</option><option value="interior">inspect interior atlas</option></select></label>
+      <label>texture <select id="optTex"><option value="auto" selected>all textures (body, lamps, interior)</option><option value="off">off</option><option value="damage">damage</option><option value="nodamage">inspect body atlas</option><option value="lights">inspect lamp atlas</option><option value="interior">inspect interior atlas</option></select></label>
+      <label title="The car file holds one wheel at the centre; the game puts it at the four corners. 'none' hides the wheels and puts the floor under the car body, which suits cars that look too high."><select id="optWheels"><option value="corners" selected>wheels at the corners</option><option value="none">no wheels</option><option value="file">wheel as in the file (centre)</option></select></label>
+      <label title="Draws the sharp interior of the car's cockpit model in place of this model's low-detail interior. Preview only; no file is changed."><input type="checkbox" id="optCockpit" checked> sharp interior</label>
       <label><input type="checkbox" id="optNormals"> normals</label>
       <label><input type="checkbox" id="optBoxes"> all boxes</label>
       <label><input type="checkbox" id="optBox" checked> selection box</label>
@@ -45,6 +52,14 @@
       <span class="muted">front = -z (arrow)</span>
     </div>
     <canvas id="gl"></canvas>
+    <div id="loading" role="status" aria-live="polite" hidden><div class="track"><div id="loadFill"></div></div><span id="loadText"></span></div>
+    <div id="transformTools" aria-label="Viewport transform tools">
+      <span id="gizmoTarget">Select a part to move it</span>
+      <button data-gizmo-mode="translate" disabled>Move (W)</button>
+      <button data-gizmo-mode="rotate" disabled>Rotate (E)</button>
+      <button data-gizmo-mode="scale" disabled>Scale (R)</button>
+      <label><input id="partBoth" type="checkbox" checked disabled> Driving + photo models</label>
+    </div>
   </section>
   <aside id="right">
     <nav id="tabs">
@@ -52,7 +67,7 @@
       <button data-tab="settings">Settings</button>
       <button data-tab="parts">Copy parts</button>
       <button data-tab="part" class="on">Part</button>
-      <button data-tab="model">Add model</button>
+      <button data-tab="model">Custom models</button>
       <button data-tab="lights">Lights</button>
       <button data-tab="exhausts">Exhausts</button>
       <button data-tab="physics">Physics</button>
@@ -75,6 +90,11 @@
     <div id="tab-file" class="tab" hidden></div>
   </aside>
 </main>
+<section id="errorBanner" role="alert" hidden>
+  <label for="errorText">Editor error</label>
+  <textarea id="errorText" readonly spellcheck="false" aria-label="Error details"></textarea>
+  <button id="copyError">Copy error</button><button id="dismissError">Dismiss</button>
+</section>
 <footer id="status">ready</footer>
 <input id="objIn" type="file" accept=".obj" hidden>
 <input id="modelIn" type="file" accept=".fbx,.glb,.gltf,.obj" hidden>

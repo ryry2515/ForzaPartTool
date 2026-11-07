@@ -864,7 +864,17 @@ def lights(c: fc.Carbin) -> list[dict]:
     return out
 
 
+def _check_light_index(c: fc.Carbin, i) -> int:
+    if not has_body_header(c):
+        raise ValueError("this file has no lights")
+    n = struct.unpack_from(">I", c.header, 0x154)[0]
+    if type(i) is not int or not 0 <= i < n:
+        raise ValueError(f"there is no light {i} (this file has {n})")
+    return n
+
+
 def set_light(c: fc.Carbin, i: int, **kw) -> None:
+    _check_light_index(c, i)
     h = bytearray(c.header)
     o = 0x158 + i * LIGHT_SIZE
     if "pos" in kw:
@@ -881,6 +891,8 @@ def set_light(c: fc.Carbin, i: int, **kw) -> None:
 
 def add_light(c: fc.Carbin, like: int | None = None) -> int:
     """Append a light record (copy of record `like`, or a plain white one) and return its index."""
+    if not has_body_header(c):
+        raise ValueError("this file has no lights")
     n = struct.unpack_from(">I", c.header, 0x154)[0]
     rec = c.header[0x158 + like * LIGHT_SIZE:0x158 + (like + 1) * LIGHT_SIZE] if like is not None and like < n else bytes(LIGHT_SIZE)
     if like is None:
@@ -894,7 +906,7 @@ def add_light(c: fc.Carbin, like: int | None = None) -> int:
 
 
 def remove_light(c: fc.Carbin, i: int) -> None:
-    n = struct.unpack_from(">I", c.header, 0x154)[0]
+    n = _check_light_index(c, i)
     o = 0x158 + i * LIGHT_SIZE
     c.header = c.header[:0x154] + struct.pack(">I", n - 1) + c.header[0x158:o] + c.header[o + LIGHT_SIZE:]
 
@@ -915,6 +927,9 @@ def exhausts(c: fc.Carbin) -> list[dict]:
 
 
 def set_exhaust_pos(c: fc.Carbin, i: int, pos) -> None:
+    ex = exhausts(c)
+    if type(i) is not int or not 0 <= i < len(ex):
+        raise ValueError(f"there is no exhaust {i} (this file has {len(ex)})")
     h = bytearray(c.header)
     n = struct.unpack_from(">I", h, 0x154)[0]
     base = 0x15C + 32 * n

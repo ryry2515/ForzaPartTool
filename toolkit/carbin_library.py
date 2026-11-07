@@ -19,6 +19,7 @@ import struct
 import subprocess
 import sys
 import time
+import tempfile
 import zipfile
 from pathlib import Path
 
@@ -37,21 +38,38 @@ def xenia_running() -> bool:
 
 
 def replace_zip_member(zip_path: Path, member: str, data: bytes, backup: bool = True) -> dict:
-    """Write a copy of `zip_path` in which `member` holds `data` (deflated) and every other member is copied untouched; then replace the file."""
+    return dict(replace_zip_members(zip_path, {member: data}, backup), member=member)
+
+
+def replace_zip_members(zip_path: Path, replacements: dict[str, bytes], backup: bool = True) -> dict:
+    """Replace a complete edit in one atomic swap, retaining unrelated compressed members."""
     zip_path = Path(zip_path)
-    tmp = zip_path.with_name(zip_path.name + ".new")
+    if not replacements:
+        raise ValueError('No edited files to save')
+    with tempfile.NamedTemporaryFile(dir=zip_path.parent, prefix=zip_path.name + '.', suffix='.new', delete=False) as stream:
+        tmp = Path(stream.name)
+    try:
+        return _replace_zip_members(zip_path, replacements, backup, tmp)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+
+
+def _replace_zip_members(zip_path, replacements, backup, tmp):
     with zipfile.ZipFile(zip_path) as zr:
         infos = zr.infolist()
         names = [i.filename for i in infos]
-        if member not in names:
-            raise KeyError(f"{member} is not in {zip_path.name}")
+        for member in replacements:
+            if names.count(member) != 1:
+                raise KeyError(f"{member} must occur exactly once in {zip_path.name}")
         with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zw:
             zw.comment = zr.comment
             for zi in infos:
-                if zi.filename == member:
+                if zi.filename in replacements:
                     ni = zipfile.ZipInfo(zi.filename, time.localtime()[:6])
                     ni.compress_type, ni.external_attr, ni.create_system = zipfile.ZIP_DEFLATED, zi.external_attr, zi.create_system
-                    zw.writestr(ni, data, compress_type=zipfile.ZIP_DEFLATED, compresslevel=6)
+                    ni.comment, ni.internal_attr = zi.comment, zi.internal_attr
+                    zw.writestr(ni, replacements[zi.filename], compress_type=zipfile.ZIP_DEFLATED, compresslevel=6)
                     continue
                 zr.fp.seek(zi.header_offset)
                 head = zr.fp.read(30)
@@ -64,6 +82,7 @@ def replace_zip_member(zip_path: Path, member: str, data: bytes, backup: bool = 
                 out.compress_type, out.CRC = zi.compress_type, zi.CRC
                 out.compress_size, out.file_size = zi.compress_size, zi.file_size
                 out.external_attr, out.create_system = zi.external_attr, zi.create_system
+                out.comment, out.internal_attr = zi.comment, zi.internal_attr
                 out.flag_bits = zi.flag_bits & ~0x08
                 out.extra = local_extra                       # the local header keeps its own extra field (Xbox LZX marker for method 21)
                 out.header_offset = zw.fp.tell()
@@ -81,19 +100,19 @@ def replace_zip_member(zip_path: Path, member: str, data: bytes, backup: bool = 
             tmp.unlink()
             raise RuntimeError("member list or order changed")
         for x, y in zip(a, b):
-            if x.filename == member:
+            if x.filename in replacements:
                 continue
             if (x.CRC, x.file_size, x.compress_size, x.compress_type, x.extra) != (y.CRC, y.file_size, y.compress_size, y.compress_type, y.extra):
                 tmp.unlink()
                 raise RuntimeError(f"{x.filename} differs after the copy")
-        if zn.read(member) != data:
-            tmp.unlink()
-            raise RuntimeError("the new member does not read back identically")
+        for member, data in replacements.items():
+            if zn.read(member) != data:
+                raise RuntimeError("the new member does not read back identically")
     bak = Path(str(zip_path) + ".bak")
     if backup and not bak.exists():
         shutil.copy2(zip_path, bak)
     os.replace(tmp, zip_path)                                  # a fresh file: hard links to an older build stay as they were
-    return {"zip": str(zip_path), "member": member, "backup": str(bak) if bak.exists() else "", "bytes": len(data)}
+    return {"zip": str(zip_path), "members": list(replacements), "backup": str(bak) if bak.exists() else "", "bytes": sum(map(len, replacements.values()))}
 
 
 class Library:
@@ -179,6 +198,9 @@ class Library:
         return p.path / archive
 
     def write(self, sid: str, archive: str, member: str, data: bytes, ignore_xenia: bool = False) -> dict:
+        return dict(self.write_many(sid, archive, {member: data}, ignore_xenia), member=member)
+
+    def write_many(self, sid: str, archive: str, replacements: dict[str, bytes], ignore_xenia: bool = False) -> dict:
         if xenia_running() and not ignore_xenia:
             raise PermissionError("Xenia is running: close it first (a running emulator can crash or keep the old file)")
         zp = self.zip_path(sid, archive)
@@ -187,6 +209,6 @@ class Library:
             for z in p.zips.values():
                 z.close()
             p.__dict__.pop("zips", None)
-        res = replace_zip_member(zp, member, data)
+        res = replace_zip_members(zp, replacements)
         self._cars.pop(sid, None)
         return res

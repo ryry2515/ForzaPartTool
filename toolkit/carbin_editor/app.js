@@ -6,6 +6,8 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { createWorkflow } from './editor_workflow.js';
 import { previewMaterial } from './viewer_materials.mjs';
+import { createPartTools } from './part_tools.mjs';
+import { createPartGizmo } from './part_gizmo.mjs';
 
 const $ = (s, r = document) => r.querySelector(s);
 const el = (tag, attrs = {}, ...kids) => {
@@ -21,21 +23,49 @@ const el = (tag, attrs = {}, ...kids) => {
 // ---------------------------------------------------------------------------------------------- state
 const st = {
   viewGeneration: 0,
-  sum: null, sel: -1, hidden: new Set(), lods: new Set([0, 1, 2, 3, 4, 5]), groups: new Map(), geom: new Map(),
+  sum: null, sel: -1, hidden: new Set(), touched: new Set(), lods: new Set([0, 1, 2, 3, 4, 5]), groups: new Map(), geom: new Map(),
   matCache: new Map(), atlas: new Map(), texMats: new Map(), texVer: 0, arch: null, filter: '', selLight: -1, objText: null, objInfo: null, objName: '',
 };
-const status = (msg, err = false) => { const s = $('#status'); s.textContent = msg; s.className = err ? 'err' : ''; };
+const status = (msg, err = false) => {
+  const s = $('#status'); s.textContent = msg; s.className = err ? 'err' : '';
+  if (err) { $('#errorText').value = msg; $('#errorBanner').hidden = false; $('#copyError').textContent = 'Copy error'; }
+};
+$('#dismissError').addEventListener('click', () => { $('#errorBanner').hidden = true; });
+$('#copyError').addEventListener('click', async () => {
+  $('#errorText').focus(); $('#errorText').select();
+  try {
+    if (window.pywebview?.api?.copy_text) await window.pywebview.api.copy_text($('#errorText').value);
+    else if (navigator.clipboard?.writeText) await navigator.clipboard.writeText($('#errorText').value);
+    else if (!document.execCommand('copy')) throw new Error('Select and copy the text');
+    $('#copyError').textContent = 'Copied';
+  } catch { $('#copyError').textContent = 'Press Ctrl+C'; }
+});
 
 async function api(path, opts = {}) {
   const r = await fetch(path, opts);
   const type = r.headers.get('Content-Type') || '';
   if (!r.ok) {
     let j = {}; try { j = await r.json(); } catch (e) { /* not json */ }
-    const e = new Error(j.error || r.statusText); e.problems = j.problems; throw e;
+    const message = r.status === 401 ? 'The editor connection expired. Reopen the app to reconnect; your saved game paths are kept.' : j.error || r.statusText;
+    const e = new Error(message); e.problems = j.problems; e.requires_discard = j.requires_discard; throw e;
   }
   return type.includes('json') ? r.json() : r;
 }
 const post = (path, body) => api(path, { method: 'POST', body: JSON.stringify(body) });
+
+// ---------------------------------------------------------------------------------------------- loading bar and timing log
+// busy.start('text', total) shows the bar (indeterminate without a total), busy.step(done, 'text') fills it, busy.end() hides it.
+const busy = (() => {
+  let total = 0;
+  const set = (done, text) => { const f = $('#loadFill'); if (total) f.style.width = Math.min(100, (done / total) * 100).toFixed(1) + '%'; if (text) $('#loadText').textContent = text; };
+  return {
+    start(text, n = 0) { total = n; const b = $('#loading'); if (!b) return; b.hidden = false; b.classList.toggle('indeterminate', !n); $('#loadFill').style.width = '0%'; $('#loadText').textContent = text; wake(1000); },
+    step(done, text) { set(done, text); },
+    end() { const b = $('#loading'); if (b) b.hidden = true; total = 0; wake(500); },
+  };
+})();
+// Timings of loads go to %APPDATA%\FH1CarbinEditor\load-times.log (this computer only), so a slow step can be found from numbers instead of guesses.
+const diag = (event, data = {}) => { post('/api/diag', { event, ...data }).catch(() => {}); };
 
 // ---------------------------------------------------------------------------------------------- three.js scene
 const canvas = $('#gl');
@@ -50,8 +80,9 @@ const controls = new OrbitControls(camera, canvas);
 controls.target.set(0, 0.6, 0);
 controls.enableDamping = true;
 const tc = new TransformControls(camera, canvas);
-tc.addEventListener('dragging-changed', e => { controls.enabled = !e.value; });
-tc.addEventListener('objectChange', () => syncPlaceFields());
+let gizmoGesture = false;
+tc.addEventListener('dragging-changed', e => { controls.enabled = !e.value; if (e.value) gizmoGesture = true; });
+tc.addEventListener('objectChange', () => { if (place.group && tc.object === place.group) syncPlaceFields(); });
 scene.add(tc);
 scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 0.9));
 const sun = new THREE.DirectionalLight(0xffffff, 1.4); sun.position.set(-3, 6, -4); scene.add(sun);
@@ -60,6 +91,8 @@ const grid = new THREE.GridHelper(12, 24, dark ? 0x394149 : 0xaab2ba, dark ? 0x2
 scene.add(new THREE.AxesHelper(0.6));
 const front = new THREE.ArrowHelper(new THREE.Vector3(0, 0, -1), new THREE.Vector3(0, 0.02, -2.6), 1.0, 0xffcc00, 0.25, 0.15); scene.add(front);
 const world = new THREE.Group(); scene.add(world);
+// Testing aid (not shown anywhere): opening the page with #debug lets a test script place the camera exactly.
+if (location.hash === '#debug') window.__editor = { camera, controls, scene, get st() { return st; }, wake: () => wake(3000) };
 const overlay = new THREE.Group(); scene.add(overlay);
 let selBox = null;
 
@@ -109,57 +142,167 @@ function material(name) {
 }
 
 // ---------------------------------------------------------------------------------------------- loading geometry
-async function loadSection(si, generation = st.viewGeneration) {
-  const buf = await (await api('/api/geometry?sec=' + si)).arrayBuffer();
-  if (generation !== st.viewGeneration || !st.sum?.sections[si]) return;
+// Typed-array views on the downloaded buffer (no copies) when the server aligned it; the position and normal buffers are shared by every sub-mesh of a part, so
+// the graphics card gets them once per part instead of once per sub-mesh.
+const view = (Type, buf, offset, count) => offset % Type.BYTES_PER_ELEMENT === 0 ? new Type(buf, offset, count) : new Type(buf.slice(offset, offset + count * Type.BYTES_PER_ELEMENT));
+// One part's geometry blob (see geometry_blob in server.py) as a group of meshes, one per sub-mesh.
+function sectionGroup(buf, userData) {
   const dv = new DataView(buf); const hl = dv.getUint32(0, true);
   const head = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 4, hl)));
   const base = 4 + hl, n = head.verts;
-  const pos = new Float32Array(buf.slice(base, base + n * 12));
-  const nrm = new Float32Array(buf.slice(base + n * 12, base + n * 24));
-  const old = st.groups.get(si);
-  if (old) { world.remove(old); old.traverse(o => o.geometry && o.geometry.dispose()); }
-  const g = new THREE.Group(); g.userData.si = si;
+  const posAttr = new THREE.BufferAttribute(view(Float32Array, buf, base, n * 3), 3);
+  const nrmAttr = new THREE.BufferAttribute(view(Float32Array, buf, base + n * 12, n * 3), 3);
+  const g = new THREE.Group(); g.userData = { ...userData };
   for (const s of head.subs) {
     if (!s.tris) continue;
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    geo.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
-    if (s.uvOffset !== undefined) geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(buf.slice(base + s.uvOffset, base + s.uvOffset + n * 8)), 2));
-    geo.setIndex(new THREE.BufferAttribute(new Uint32Array(buf.slice(base + s.offset, base + s.offset + s.tris * 12)), 1));
+    geo.setAttribute('position', posAttr);
+    geo.setAttribute('normal', nrmAttr);
+    if (s.uvOffset !== undefined) geo.setAttribute('uv', new THREE.BufferAttribute(view(Float32Array, buf, base + s.uvOffset, n * 2), 2));
+    geo.setIndex(new THREE.BufferAttribute(view(Uint32Array, buf, base + s.offset, s.tris * 3), 1));
     const m = new THREE.Mesh(geo, material(s.material));
-    m.userData = { si, k: s.k, lod: s.lod, mat: s.material };
+    m.userData = { ...userData, k: s.k, lod: s.lod, mat: s.material };
     g.add(m);
   }
+  return g;
+}
+async function loadSection(si, generation = st.viewGeneration, quick = false) {
+  const buf = await (await api('/api/geometry?sec=' + si)).arrayBuffer();
+  if (generation !== st.viewGeneration || !st.sum?.sections[si]) return;
+  const old = st.groups.get(si);
+  if (old) { world.remove(old); old.traverse(o => o.geometry && o.geometry.dispose()); }
+  const g = sectionGroup(buf, { si });
   st.groups.set(si, g); world.add(g);
-  applyVisibility();
+  if (quick) applySectionVisibility(si, g, viewOptions()); else applyVisibility();
 }
 
 async function loadAll(indices) {
   const generation = st.viewGeneration;
   const list = indices ?? st.sum.sections.map(s => s.index);
+  const t0 = performance.now(), marks = st.loadMarks; st.loadMarks = null;
   status(`loading ${list.length} parts...`);
-  let i = 0;
-  const worker = async () => { while (i < list.length && generation === st.viewGeneration) { const si = list[i++]; try { await loadSection(si, generation); } catch (e) { if (generation === st.viewGeneration) status(e.message, true); } } };
-  await Promise.all([worker(), worker(), worker(), worker()]);
-  if (generation === st.viewGeneration) status(`${st.sum.name}: ${st.sum.sections.length} parts`);
+  busy.start(`Loading ${st.sum.name}: 0 of ${list.length} parts`, list.length);
+  const layoutReady = indices ? Promise.resolve() : loadWheelLayout(generation);
+  let i = 0, done = 0;
+  const worker = async () => {
+    while (i < list.length && generation === st.viewGeneration) {
+      const si = list[i++];
+      try { await loadSection(si, generation, true); } catch (e) { if (generation === st.viewGeneration) status(e.message, true); }
+      done++; busy.step(done, `Loading ${st.sum.name}: ${done} of ${list.length} parts`);
+    }
+  };
+  await Promise.all([worker(), worker(), worker(), worker(), worker(), worker()]);
+  if (generation !== st.viewGeneration) return;                       // another car was opened meanwhile: that load owns the bar
+  await layoutReady;
+  applyVisibility();                                                  // one pass over everything, not one per part
+  busy.end();
+  const ms = Math.round(performance.now() - t0);
+  status(`${st.sum.name}: ${st.sum.sections.length} parts` + (indices ? '' : ` (scene built in ${(ms / 1000).toFixed(1)} s)`));
+  if (!indices) loadCockpit(generation);                              // in the background: the car is already usable
+  if (!indices) diag('car_loaded', { car: st.sum.name, parts: st.sum.sections.length, scene_ms: ms, ...(marks || {}) });
 }
 
-function applyVisibility() {
-  const showUndrawn = $('#optHidden').checked;
+// The page options are read once per pass (a lookup per sub-mesh made a car with hundreds of them crawl).
+// cockpit: the sharp interior of <car>_cockpit.carbin is drawn in place of the driving model's low-detail interior (preview only; the files are not changed)
+const viewOptions = () => ({ showUndrawn: $('#optHidden').checked, wire: $('#optWire').checked,
+  cockpit: !!st.cockpit && $('#optCockpit').checked && st.lods.has(st.minLod) });
+function applySectionVisibility(si, g, opts) {
+  const sec = st.sum.sections[si]; if (!sec) return;
+  g.visible = !st.hidden.has(si) && matchesFilter(sec) && !(opts.cockpit && st.cockpit.replaces.has(sec.name) && !st.touched.has(sec.name) && st.sel !== si);
+  for (const m of g.children) {
+    const sub = sec.subs[m.userData.k];
+    const drawn = !st.sum.body_header || (sub && sub.drawn_in.length > 0);
+    m.visible = st.lods.has(m.userData.lod) && (drawn || opts.showUndrawn);
+    m.material = meshMaterial(m, sec);
+    m.material.wireframe = opts.wire;
+  }
+}
+// The car file holds one wheel at the centre of the car; the game puts it at the four corners. The preview does the same (copies that share the
+// wheel's geometry), and shows the real part only while it is selected, so it can still be moved.
+let wheelGhosts = [];
+function clearWheels() { for (const g of wheelGhosts) world.remove(g); wheelGhosts = []; }
+function drawWheels() {
+  clearWheels();
+  const layout = st.wheelLayout, src = layout?.has ? st.groups.get(layout.section) : null, mode = $('#optWheels').value;
+  if (!src || mode === 'file') return;
+  const sec = st.sum.sections[layout.section];
+  const on = !st.hidden.has(layout.section) && matchesFilter(sec);
+  src.visible = on && st.sel === layout.section;          // the real part (at the centre) only while it is selected, so it can be moved
+  if (mode === 'none') return;
+  for (const w of layout.wheels) {
+    const g = new THREE.Group(); g.position.set(w.x, w.y, w.z); if (w.flip) g.rotation.y = Math.PI;
+    for (const m of src.children) { const c = new THREE.Mesh(m.geometry, m.material); c.userData = m.userData; c.visible = m.visible; g.add(c); }
+    g.visible = on; world.add(g); wheelGhosts.push(g);
+  }
+}
+let cockpitGroup = null;
+function clearCockpit() { if (cockpitGroup) { overlay.remove(cockpitGroup); cockpitGroup.traverse(o => o.geometry && o.geometry.dispose()); cockpitGroup = null; } st.cockpit = null; }
+async function loadCockpit(generation) {
+  let info = null;
+  try { info = await api('/api/cockpit_info'); } catch (e) { return; }
+  if (!info?.has || generation !== st.viewGeneration) return;
+  const parts = info.sections, loaded = [];
+  let next = 0;
+  const worker = async () => {
+    while (next < parts.length && generation === st.viewGeneration) {
+      const p = parts[next++];
+      try { loaded.push(sectionGroup(await (await api('/api/cockpit_geometry?sec=' + p.index)).arrayBuffer(), { cockpit: true, name: p.name })); } catch (e) { /* a missing part is simply not drawn */ }
+    }
+  };
+  await Promise.all([worker(), worker(), worker()]);
+  if (generation !== st.viewGeneration) { for (const g of loaded) g.traverse(o => o.geometry && o.geometry.dispose()); return; }
+  const group = new THREE.Group();
+  if (!loaded.length) return;
+  const best = Math.min(...loaded.flatMap(g => g.children.map(m => m.userData.lod)));          // the sharpest level of detail only
+  for (const g of loaded) { for (const m of [...g.children]) if (m.userData.lod !== best) { g.remove(m); m.geometry.dispose(); } group.add(g); }
+  overlay.add(group); cockpitGroup = group;
+  st.cockpit = { replaces: new Set(info.replaces) };
+  applyVisibility();
+}
+function drawCockpit(opts) {
+  if (!cockpitGroup) return;
+  cockpitGroup.visible = opts.cockpit;
+  if (!opts.cockpit) return;
+  // a cockpit part follows the driving model's part of the same name (Hide, Isolate and the filter box); gauges have no twin and follow the interior
+  const shown = name => {
+    const si = st.sum.sections.findIndex(s => s.name === name);
+    return si < 0 ? null : !st.hidden.has(si) && matchesFilter(st.sum.sections[si]);
+  };
+  const interior = shown('interior');
+  for (const g of cockpitGroup.children) {
+    const own = shown(g.userData.name);
+    g.visible = !st.touched.has(g.userData.name) && (own ?? interior ?? true);
+    for (const m of g.children) { m.material = meshMaterial(m, { pool: 'lod0' }, true); m.material.wireframe = opts.wire; }
+  }
+}
+async function loadWheelLayout(generation) {
+  let layout = null;
+  try { layout = await api('/api/wheel_layout'); } catch (e) { layout = null; }
+  if (generation === st.viewGeneration) st.wheelLayout = layout;
+}
+// Where the floor grid is: under the tyres (wheels at the corners), under the lowest visible part of the body (no wheels), or at 0 (the file's own centre).
+function floorHeight() {
+  const layout = st.wheelLayout, mode = $('#optWheels').value;
+  if (!layout?.has || mode === 'file') return 0;
+  if (mode === 'corners') return layout.ground;
+  let low = Infinity;
   for (const [si, g] of st.groups) {
-    const sec = st.sum.sections[si];
-    const sectionOn = !st.hidden.has(si) && matchesFilter(sec);
-    g.visible = sectionOn;
+    if (si === layout.section || !g.visible) continue;
     for (const m of g.children) {
-      const sub = sec.subs[m.userData.k];
-      const drawn = !st.sum.body_header || (sub && sub.drawn_in.length > 0);
-      m.visible = st.lods.has(m.userData.lod) && (drawn || showUndrawn);
-      m.material = meshMaterial(m, sec);
-      m.material.wireframe = $('#optWire').checked;
+      if (!m.visible) continue;
+      if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
+      low = Math.min(low, m.geometry.boundingBox.min.y);
     }
   }
+  return Number.isFinite(low) ? low : 0;
+}
+function applyVisibility() {
+  const opts = viewOptions();
+  for (const [si, g] of st.groups) applySectionVisibility(si, g, opts);
+  drawWheels(); drawCockpit(opts);
+  grid.position.y = floorHeight();
   drawSelection(); drawOverlays(); drawExtras();
+  partGizmo.refresh(); updateGizmoUI();
 }
 
 function matchesFilter(sec) {
@@ -204,21 +347,41 @@ function drawOverlays() {
 
 // click to select
 let down = null;
-canvas.addEventListener('pointerdown', e => { down = [e.clientX, e.clientY]; });
+canvas.addEventListener('pointerdown', e => { down = tc.dragging || partGizmo.busy ? null : [e.clientX, e.clientY]; });
 canvas.addEventListener('pointerup', e => {
+  if (gizmoGesture) { gizmoGesture = false; down = null; return; }
+  if (partGizmo.busy) return;
+  if (e.button !== 0) return;
   if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) return;
   const r = canvas.getBoundingClientRect();
   const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
   const ray = new THREE.Raycaster(); ray.setFromCamera(ndc, camera);
   const meshes = []; world.traverse(o => { if (o.isMesh && o.visible && o.parent.visible) meshes.push(o); });
+  if (place.group) place.group.traverse(o => { if (o.isMesh && o.visible) meshes.push(o); });
   const hit = ray.intersectObjects(meshes, false)[0];
-  if (hit) selectSection(hit.object.userData.si);
+  if (hit) {
+    if (hit.object.userData.si !== undefined) selectSection(hit.object.userData.si);
+    else { activatePlacement(); setTab('model'); }
+  }
+});
+
+canvas.addEventListener('contextmenu', event => {
+  if (!st.sum) return;
+  const rect = canvas.getBoundingClientRect();
+  const ray = new THREE.Raycaster();
+  ray.setFromCamera(new THREE.Vector2((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1), camera);
+  const meshes = [];
+  world.traverse(o => { if (o.isMesh && o.visible && o.parent.visible) meshes.push(o); });
+  if (place.group) place.group.traverse(o => { if (o.isMesh && o.visible) meshes.push(o); });
+  const hit = ray.intersectObjects(meshes, false)[0];
+  if (hit) partTools.menu(event, hit.object.userData.si ?? 'import');
 });
 
 // ---------------------------------------------------------------------------------------------- UI: tree, lods
 function buildLodBar() {
   const bar = $('#lodBar'); bar.replaceChildren(el('span', { class: 'muted' }, 'LOD'));
   const present = new Set(); for (const s of st.sum.sections) for (const b of s.subs) present.add(b.lod);
+  st.minLod = present.size ? Math.min(...present) : 0;
   if (st.lodReset) { st.lodReset = false; st.lods = new Set(present.size ? [Math.min(...present)] : []); }
   else st.lods = new Set([...st.lods].filter(l => present.has(l)));
   if (!st.lods.size && present.size) st.lods.add(Math.min(...present));
@@ -233,7 +396,7 @@ function buildTree() {
     if (!matchesFilter(s)) continue;
     const eye = el('input', { type: 'checkbox', checked: !st.hidden.has(s.index), onclick: e => e.stopPropagation(), onchange: e => { e.target.checked ? st.hidden.delete(s.index) : st.hidden.add(s.index); applyVisibility(); } });
     const notDrawn = st.sum.body_header && s.subs.length && s.subs.every(b => !b.drawn_in.length);
-    const row = el('div', { class: 'row', onclick: () => selectSection(s.index) }, eye,
+    const row = el('div', { class: 'row', onclick: () => selectSection(s.index), oncontextmenu: event => partTools.menu(event, s.index) }, eye,
       el('span', { class: 'name' + (notDrawn ? ' warn' : ''), title: notDrawn ? 'not in any draw list: the game does not draw this part' : '' }, s.name),
       el('span', { class: 'tag' }, `${s.verts}v · ${s.subs.length}`));
     const subs = el('div', { class: 'subs' }, s.subs.map(b => el('div', {}, el('span', {}, b.material + (b.swatch ? ' •' : '')), el('span', {}, `L${b.lod} · ${b.tris}t${st.sum.body_header && !b.drawn_in.length ? ' · hidden' : ''}`))));
@@ -241,7 +404,29 @@ function buildTree() {
   }
 }
 
-function selectSection(si) { st.sel = si; buildTree(); drawSelection(); drawExtras(); renderPart(); setTab('part'); }
+function selectSection(si) {
+  if (partGizmo.busy) return;
+  st.sel = si; partGizmo.select(si); buildTree(); drawSelection(); drawExtras(); renderPart(); setTab('part');
+}
+
+function updateGizmoUI() {
+  const imported = !!place.group && tc.object === place.group;
+  const available = imported || partGizmo.available;
+  $('#gizmoTarget').textContent = imported ? 'Custom model: ' + place.name :
+    available ? 'Part: ' + st.sum.sections[partGizmo.index].name : 'Select a part to move it';
+  for (const button of document.querySelectorAll('[data-gizmo-mode]')) {
+    button.disabled = !available || partGizmo.busy;
+    button.classList.toggle('on', button.dataset.gizmoMode === tc.mode);
+  }
+  $('#partBoth').disabled = imported || !canPairModels() || partGizmo.busy;
+  $('#btnUndo').disabled = $('#btnRedo').disabled = partGizmo.busy;
+}
+
+function setGizmoMode(mode) { tc.setMode(mode); updateGizmoUI(); wake(); }
+function activatePlacement() {
+  if (!place.group || partGizmo.busy) return;
+  partGizmo.detach(); tc.attach(place.group); updateGizmoUI();
+}
 
 // ---------------------------------------------------------------------------------------------- part tab
 const num = (id, v, step = 0.01) => el('input', { type: 'number', id, value: v, step });
@@ -257,9 +442,14 @@ function renderPart() {
   box.append(
     el('h3', {}, 'Part'),
     el('div', { class: 'field' }, el('button', { onclick: () => workflow.copyCurrent() }, 'Copy part (Ctrl+C)'), el('button', { onclick: () => workflow.openPaste() }, 'Paste part… (Ctrl+V)')),
+    el('div', { class: 'field' }, el('button', { onclick: () => partTools.copy(s.index) }, 'Copy coordinates'), el('button', { onclick: () => partTools.paste(s.index) }, 'Paste coordinates'), el('button', { onclick: () => partTools.mergeDialog(s.index) }, 'Merge into…')),
     el('div', { class: 'field' }, el('label', {}, 'name'), el('input', { id: 'pName', value: s.name }), el('button', { onclick: () => run('rename_section', { section: s.index, name: $('#pName').value }, []) }, 'Rename')),
     el('p', { class: 'muted' }, `pivot (${s.offset.map(v => v.toFixed(3)).join(', ')}) · half extents (${s.bmax.map(v => v.toFixed(3)).join(', ')}) · ${s.verts} vertices · pool ${s.pool}. The game finds some parts by name (for example hooda, exhaustLa): rename with care.`),
     el('h3', {}, 'Move, rotate, scale'),
+    el('div', {class: 'field'}, ['translate','rotate','scale'].map((mode,i) => el('button', {
+      'data-gizmo-mode': mode, onclick: () => { partGizmo.select(s.index); setGizmoMode(mode); }
+    }, ['Move (W)','Rotate (E)','Scale (R)'][i]))),
+    el('p', {class: 'muted'}, 'Drag the coloured arrows, rotation rings or scale handles in the viewport. Release to apply; Escape cancels. Each drag is one Undo step.'),
     el('div', { class: 'field' }, el('label', {}, 'move (m)'), vec('tr', [0, 0, 0], 0.01)),
     el('div', { class: 'field' }, el('label', {}, 'rotate (deg)'), vec('ro', [0, 0, 0], 1)),
     el('div', { class: 'field' }, el('label', {}, 'scale'), vec('sc', [1, 1, 1], 0.01)),
@@ -287,6 +477,7 @@ function renderPart() {
     el('div', { class: 'field' }, el('button', { class: 'primary', onclick: () => { st.modelTarget = s.index; $('#modelIn').click(); } }, 'Add a model to this part (FBX, GLB, OBJ)...')),
     el('div', { id: 'objDialog' }));
   renderObjDialog();
+  updateGizmoUI();
 }
 
 async function doTransform(mirror) {
@@ -295,14 +486,19 @@ async function doTransform(mirror) {
     sections: secs, translate: ['x', 'y', 'z'].map(a => val('tr' + a)), rotate: ['x', 'y', 'z'].map(a => val('ro' + a)),
     scale: ['x', 'y', 'z'].map(a => { const v = parseFloat($('#sc' + a).value); return isNaN(v) ? 1 : v; }),
     pivot: $('#pOrigin').checked ? 'origin' : 'section', move_pivot: $('#pMovePivot').checked, mirror,
+    both_models: $('#partBoth').checked && canPairModels(),
   }, secs);
 }
 
 async function run(op, args, reload) {
   try {
+    // Parts the user edits stop being replaced by the cockpit model's copy in the preview (it would hide the edit).
+    const touched = [args.sections, args.section, args.source_section, args.target_section].flat().filter(Number.isInteger).map(i => st.sum.sections[i]?.name).filter(Boolean);
     st.sum = await post('/api/op', { op, ...args });
+    for (const name of touched) st.touched.add(name);
+    if (op === 'add_model' && args.mode === 'new' && st.sum.last_pasted != null) reload = [st.sum.last_pasted];   // a part of its own: load its geometry
     if (args.texture) invalidateTextures();
-    afterChange(reload);
+    await afterChange(reload);
     status(`${op} done`);
     return true;
   } catch (e) { status(`${op} failed: ${e.message}`, true); return false; }
@@ -318,7 +514,7 @@ function afterChange(reload) {
   if (st.sel >= st.sum.sections.length) st.sel = -1;
   buildLodBar(); buildTree(); renderPart(); if (!place.group) renderModel(); renderLights(); renderExhausts(); renderFile();
   $('#fileName').textContent = `${st.sum.name} · ${(st.sum.size / 1024).toFixed(0)} KB`;
-  if (reload === 'all') { loadAll(); } else if (reload && reload.length) { Promise.all(reload.map(index => loadSection(index))).then(() => status('updated')); }
+  if (reload === 'all') { return loadAll(); } else if (reload && reload.length) { return Promise.all(reload.map(index => loadSection(index))).then(() => status('updated')); }
   else applyVisibility();
 }
 
@@ -398,9 +594,19 @@ function renderExhausts() {
 }
 
 // ---------------------------------------------------------------------------------------------- add a model (FBX / GLB / OBJ), placed with a gizmo
-const place = { group: null, name: '', ext: '', mats: [], tris: 0 };
-const ghostMat = new THREE.MeshStandardMaterial({ color: 0xffa726, transparent: true, opacity: 0.85, side: THREE.DoubleSide, roughness: 0.5 });
+const place = { group: null, name: '', ext: '', mats: [], tris: 0, doubleSided: false };
+const ghostMat = new THREE.MeshStandardMaterial({ color: 0xffa726, transparent: true, opacity: 0.85, side: THREE.FrontSide, roughness: 0.5 });
 
+function canPairModels() {
+  const origin = st.sum?.origin; if (!origin) return false;
+  const media = origin.source === 'game' ? origin.archive.split(/[\\/]/).pop().replace(/\.zip$/i, '') : origin.member.split('/')[2];
+  const name = origin.member.split('/').pop().toLowerCase();
+  const pair = [media?.toLowerCase() + '.carbin', media?.toLowerCase() + '_lod0.carbin'];
+  if (!media || !pair.includes(name)) return false;
+  return !st.siblingNames || pair.every(n => st.siblingNames.has(n));        // a few cars have no close-up model: nothing to pair with
+}
+
+st.canPair = canPairModels;                      // part_tools uses it to decide whether the merge dialog can edit both models
 async function loadModelFile(file) {
   const ext = file.name.split('.').pop().toLowerCase();
   let root;
@@ -415,7 +621,7 @@ async function loadModelFile(file) {
 }
 
 function clearPlacement() {
-  tc.detach();
+  if (tc.object === place.group) tc.detach();
   if (place.group) { overlay.remove(place.group); place.group.traverse(o => o.geometry && o.geometry.dispose && o.userData.own && o.geometry.dispose()); }
   place.group = null; place.mats = [];
 }
@@ -442,8 +648,9 @@ function startPlacement(root, name, ext) {
   const g0 = st.groups.get(st.sel);
   if (g0) { const b = new THREE.Box3().setFromObject(g0); if (!b.isEmpty()) at = b.getCenter(new THREE.Vector3()); }
   group.position.copy(at);
-  overlay.add(group); tc.attach(group);
+  overlay.add(group); partGizmo.detach(); tc.attach(group);
   Object.assign(place, { group, name, ext, tris, mats: [...counts.entries()].map(([n, t]) => ({ name: n, tris: t })) });
+  updateGizmoUI();
   st.modelTarget = st.modelTarget ?? st.sel;
   setTab('model'); renderModel();
   status(`${name}: ${tris} triangles. Drag the gizmo to place it, then add it to the car.`);
@@ -482,6 +689,13 @@ function readPlaceFields() {
   g.scale.set(s('msx'), s('msy'), s('msz')); syncPlaceFields();
 }
 
+const defaultPartName = name => (String(name || 'custom_model').replace(/\.[^.]*$/, '').replace(/[^A-Za-z0-9_]+/g, '_').replace(/^_+|_+$/g, '').toLowerCase() || 'custom_model').slice(0, 40);
+function syncModelMode() {
+  const mode = $('#mMode')?.value; if (!mode) return;
+  $('#mNameRow').style.display = mode === 'new' ? '' : 'none';
+  $('#mTargetLabel').textContent = mode === 'new' ? 'copy settings from' : 'part';
+}
+
 function renderModel() {
   const box = $('#tab-model'); box.replaceChildren();
   if (!st.sum) { box.append(el('p', { class: 'muted' }, 'Open a .carbin first.')); return; }
@@ -497,7 +711,8 @@ function renderModel() {
   const f3 = (pre, vals, step) => el('div', { class: 'grid3' }, ['x', 'y', 'z'].map((a, i) => el('input', { type: 'number', id: pre + a, value: vals[i], step, onchange: readPlaceFields })));
   box.append(
     el('h3', {}, `${place.name}`), el('p', { class: 'muted' }, `${place.tris} triangles, ${place.mats.length} material(s)`),
-    el('div', { class: 'field' }, ['translate', 'rotate', 'scale'].map((m, i) => el('button', { title: ['W', 'E', 'R'][i], onclick: () => tc.setMode(m) }, m))),
+    el('div', {class: 'field'}, el('button', {onclick: () => partTools.copy('import')}, 'Copy coordinates'), el('button', {onclick: () => partTools.paste('import')}, 'Paste coordinates')),
+    el('div', { class: 'field' }, ['translate', 'rotate', 'scale'].map((m, i) => el('button', { title: ['W', 'E', 'R'][i], onclick: () => { activatePlacement(); setGizmoMode(m); } }, m))),
     el('div', { class: 'field' }, el('label', {}, 'position'), f3('mp', [0, 0, 0], 0.01)),
     el('div', { class: 'field' }, el('label', {}, 'rotation'), f3('mr', [0, 0, 0], 1)),
     el('div', { class: 'field' }, el('label', {}, 'scale'), f3('ms', [1, 1, 1], 0.01)),
@@ -509,8 +724,15 @@ function renderModel() {
     el('div', { class: 'field' }, el('label', {}, 'longest side'), el('input', { type: 'number', id: 'mFit', value: 1, step: 0.05 }), el('span', { class: 'muted' }, 'm'),
       el('button', { onclick: () => { const b = new THREE.Box3().setFromObject(place.group), m = Math.max(...b.getSize(new THREE.Vector3()).toArray()); const k = (parseFloat($('#mFit').value) || 1) / m; place.group.scale.multiplyScalar(k); syncPlaceFields(); } }, 'Set size')),
     el('h3', {}, 'Where it goes'),
-    el('div', { class: 'field' }, el('label', {}, 'part'), el('select', { id: 'mTarget' }, st.sum.sections.map(s => el('option', { value: s.index, selected: s.index === (st.modelTarget ?? st.sel) }, s.name)))),
-    el('div', { class: 'field' }, el('label', {}, 'how'), el('select', { id: 'mMode' }, el('option', { value: 'add' }, 'add onto the part (keep what it has)'), el('option', { value: 'replace' }, 'replace the part\'s geometry'))),
+    el('p', {class: 'muted'}, 'A separate part is the easiest: it appears in the part list, you can select and move it again at any time, and it stays its own part when you save and in Forza editors. Merging puts it inside an existing named slot (including an empty bumper, hood or side skirt slot) and keeps that slot\'s upgrade assignment, but then it can no longer be moved on its own.'),
+    el('div', { class: 'field' }, el('label', {}, 'how'), el('select', { id: 'mMode', onchange: syncModelMode }, el('option', { value: 'new' }, 'as a separate part (recommended)'), el('option', { value: 'add' }, 'merge onto an existing part (keep what it has)'), el('option', { value: 'replace' }, 'replace an existing part\'s geometry'))),
+    el('div', { class: 'field', id: 'mNameRow' }, el('label', {}, 'part name'), el('input', { id: 'mName', value: defaultPartName(place.name), maxlength: 48 })),
+    el('div', { class: 'field' }, el('label', { id: 'mTargetLabel' }, 'copy settings from'), el('select', { id: 'mTarget' }, st.sum.sections.map(s => el('option', { value: s.index, selected: s.index === (st.modelTarget ?? st.sel) }, s.name + (s.subs.length ? '' : ' (empty slot)'))))),
+    el('label', {class: 'chk'}, el('input', {id: 'mBothModels', type: 'checkbox', checked: canPairModels(), disabled: !canPairModels()}), ' Driving + close-up / photo model (main + LOD0)'),
+    el('label', {class: 'chk'}, el('input', {id: 'mDoubleSided', type: 'checkbox', checked: place.doubleSided, onchange: e => {
+      place.doubleSided = e.target.checked; ghostMat.side = place.doubleSided ? THREE.DoubleSide : THREE.FrontSide; ghostMat.needsUpdate = true;
+    }}), ' Double-sided — visible from both sides in FH1'),
+    el('p', {class: 'muted'}, 'Double-sided adds back faces when saving. It doubles the imported triangle count.'),
     el('div', { class: 'field' }, el('label', {}, 'LODs'), el('div', {}, lodsPresent.map(l => el('label', { class: 'chk' }, el('input', { type: 'checkbox', 'data-lod': l, checked: true }), ' ' + l + '  ')))),
     el('div', { class: 'field' }, el('label', {}, ''), el('label', { class: 'chk' }, el('input', { type: 'checkbox', id: 'mAuto', checked: true }), ' automatic LODs: the lowest ticked LOD gets the full model, higher LODs get simplified copies sized like this part\'s own LODs')),
     el('div', { class: 'field' }, el('label', {}, ''), el('label', { class: 'chk' }, el('input', { type: 'checkbox', id: 'mFlip', checked: place.ext !== 'gltf' && place.ext !== 'glb' }), ' flip V (FBX / OBJ have a bottom-left origin)')),
@@ -520,14 +742,14 @@ function renderModel() {
       place.mats.map(m => el('tr', {}, el('td', {}, m.name), el('td', {}, String(m.tris)), el('td', {}, el('input', { 'data-mat': m.name, value: guessMaterial(m.name), list: 'materials' }))))),
     el('p', { class: 'muted' }, 'A material name must exist in the car\'s ShaderSettings.xml, and its look comes from the car\'s atlas textures. An added model has no texture of its own: it uses the flat colour of the material you pick.'),
     el('h3', {}, 'Texture (optional)'),
-    el('p', { class: 'muted' }, 'Give the model its own picture. Every exterior material of the car reads one body atlas (the game\'s shaders), and that atlas is about 97% full, so a picture needs the texture area of some parts: tick the parts you do not need (the list shows how much area only that part reads), press Auto place, and the picture is painted into the largest free rectangle (all mip levels, both atlas sizes). The ticked parts will then look wrong. Red on the atlas = still read by a part you keep. You can also drag a rectangle yourself. For a car in a DLC the atlas files are rewritten in place (a backup is made); for a base-game car they go into the new car you save.'),
+    el('p', { class: 'muted' }, 'Choose an image, then Auto place or drag a rectangle on the texture. Red areas are already used by the car. Free space by ticking parts you no longer need; those parts may lose their original texture. Changes stay staged until you apply or export the car.'),
     el('div', { class: 'field' }, el('input', { type: 'file', accept: 'image/*', id: 'mTexFile', onchange: e => { st.texFile = e.target.files[0] || null; drawTexCanvas(); } }), el('button', { onclick: () => { st.texFile = null; st.texRect = null; document.getElementById('mTexFile').value = ''; drawTexCanvas(); } }, 'No texture')),
     el('div', { class: 'field' }, el('button', { onclick: autoPlace }, 'Auto place'), el('span', { class: 'muted', id: 'mFreeInfo' }, '')),
     el('div', { id: 'mParts', style: 'max-height:140px;overflow:auto;border:1px solid var(--line);padding:4px;margin:4px 0' }),
     el('canvas', { id: 'mTexCanvas', width: 300, height: 300, style: 'max-width:100%;cursor:crosshair;border:1px solid var(--line)' }),
     el('p', { class: 'muted', id: 'mTexInfo' }, 'no texture chosen'),
     el('div', { class: 'field' }, el('button', { class: 'primary', onclick: commitModel }, 'Add to car'), el('button', { onclick: () => { clearPlacement(); renderModel(); status('cancelled'); } }, 'Cancel')));
-  syncPlaceFields(); setupTexCanvas();
+  syncPlaceFields(); setupTexCanvas(); syncModelMode();
   const g = place.group;
   ['mpx', 'mpy', 'mpz'].forEach((id, i) => { document.getElementById(id).value = g.position.getComponent(i).toFixed(4); });
 }
@@ -636,33 +858,69 @@ async function commitModel() {
   }
   const meshes = collectMeshes(mapping);
   status(`sending ${meshes.length} mesh group(s)...`);
-  const committed = await run('add_model', { section: target, mode: $('#mMode').value, lods, flip_v: $('#mFlip').checked, auto_lods: $('#mAuto').checked, texture, uv0_mode: $('#mUv').value, meshes }, [target]);
+  const both_models = $('#mBothModels').checked && canPairModels();
+  const mode = $('#mMode').value, partName = ($('#mName').value || '').trim() || defaultPartName(place.name);
+  const committed = await run('add_model', { section: target, mode, name: partName, lods, both_models, double_sided: $('#mDoubleSided').checked, flip_v: $('#mFlip').checked, auto_lods: $('#mAuto').checked, texture, uv0_mode: $('#mUv').value, meshes }, [target]);
   if (!committed) return;
-  clearPlacement(); st.modelTarget = target; selectSection(target); setTab('model'); renderModel();
+  clearPlacement(); st.modelTarget = target; renderModel();
+  if (mode === 'new' && st.sum.last_pasted != null) {
+    const made = st.sum.last_pasted; selectSection(made); setTab('part');       // selected, so the gizmo can move it right away
+    status(`Added "${st.sum.sections[made].name}" as its own part. Select it in the part list any time to move, rotate or scale it.`);
+    return;
+  }
+  selectSection(target); setTab('model');
+  if (both_models) status('Merged into driving + photo models. Apply to existing car or export the car ZIP to save.');
 }
 
 $('#modelIn').addEventListener('change', async e => { const f = e.target.files[0]; e.target.value = ''; if (f) await loadModelFile(f); });
 addEventListener('keydown', e => {
-  if (!place.group || ['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return;
-  if (e.key === 'w') tc.setMode('translate'); if (e.key === 'e') tc.setMode('rotate'); if (e.key === 'r') tc.setMode('scale');
+  if (e.ctrlKey || e.altKey || e.metaKey || ['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName) || e.target.isContentEditable) return;
+  if (e.key === 'Escape' && partGizmo.cancel()) {status('Drag cancelled.'); return;}
+  if (!tc.object || partGizmo.busy) return;
+  const mode = {w:'translate',e:'rotate',r:'scale'}[e.key.toLowerCase()];
+  if (mode) {e.preventDefault(); setGizmoMode(mode);}
 });
 
 // ---------------------------------------------------------------------------------------------- open (game + DLC) and save
 async function refreshLibrary() {
-  st.lib = await api('/api/library');
+  try { st.lib = await api('/api/library'); st.libraryError = ''; }
+  catch (error) { st.libraryError = error.message; workflow.renderSettings(); setTab('settings'); throw error; }
   workflow.renderSettings();
   renderFile();
-  await workflow.loadCars();
+  workflow.loadCars();                      // in the background: the car that is already open must not wait for the list of all cars
 }
 
-async function saveBack(force = false) {
+async function saveBack() {
   try {
-    const r = await post('/api/library/save', { force });
-    status(`saved into ${r.saved.zip.split(/[\\/]/).pop()} (${r.saved.bytes} bytes); backup ${r.saved.backup || 'already existed'}`);
-  } catch (e) {
-    if (e.problems) { if (confirm('Validation problems:\n' + e.problems.join('\n') + '\n\nSave anyway?')) saveBack(true); }
-    else status(e.message, true);
+    const r = await post('/api/library/save', {});
+    st.sum = await api('/api/summary'); afterChange([]);
+    status(`Updated the existing car: ${r.saved.members.length} files in ${r.saved.zip.split(/[\\/]/).pop()}. Backup: ${r.saved.backup}`);
+  } catch (e) { status(e.message, true); }
+}
+
+async function applyExistingCar() {
+  if (!st.sum?.origin) return status('Right-click a car in Cars and choose Import first.', true);
+  const source = st.lib?.sources.find(s => s.id === st.sum.origin.source);
+  if (!source?.writable) {
+    renderFile(); setTab('file');
+    return status('This install is a read-only GoD, ISO or STFS package. Export car ZIP, then replace the ZIP in an extracted game or DLC copy. Set that extracted folder in Settings to apply directly.', true);
   }
+  await saveBack();
+}
+
+async function exportCarZip() {
+  if (!st.sum?.origin) return status('Import a car from Cars first.', true);
+  try {
+    const start = st.lib?.output_dir || '';                 // the folder used last time: the chooser opens there
+    const out_dir = window.pywebview?.api?.choose_path ? await window.pywebview.api.choose_path('output', start) : prompt('Folder for the replacement car ZIP:', start);
+    if (!out_dir) return;
+    status('Building replacement ZIP with all staged edits…');
+    busy.start('Building the replacement ZIP…');
+    let result;
+    try { result = await post('/api/library/export_zip', {out_dir}); } finally { busy.end(); }
+    if (st.lib && result.output_dir) { st.lib.output_dir = result.output_dir; st.cloneDef = null; }      // remembered: offered again next time
+    status(`Replacement ZIP saved: ${result.saved.zip}. Car identity kept. Use it in your extracted game / DLC copy.`);
+  } catch (error) { status(error.message, true); }
 }
 
 // ---------------------------------------------------------------------------------------------- save as a new car
@@ -685,10 +943,12 @@ async function buildNewCar() {
   const v = id => document.getElementById(id).value.trim();
   try {
     status('building the new car (copying files, checking the database)...');
+    busy.start('Building the new car (copying files, checking the database)…');
     const r = await post('/api/clone', { new_media: v('ncName'), offer: parseInt(v('ncOffer')), out_dir: v('ncOut'), include_open: document.getElementById('ncOpen').checked, display_name: v('ncTitle'), short_name: v('ncShort'),
       formats: ['xenia', 'stfs'].filter(f => document.getElementById('nc_' + f).checked) });
     st.cloneResult = r; st.cloneDef = null; loadCloneDefaults(); status(`new car built: id ${r.car_id}, ${r.rows} database rows, ${r.files} files`);
   } catch (e) { st.cloneResult = { error: e.message, problems: e.problems || [] }; renderFile(); status(e.message, true); }
+  finally { busy.end(); }
 }
 function cloneSection() {
   const o = st.sum.origin;
@@ -703,7 +963,9 @@ function cloneSection() {
     el('div', { class: 'field' }, el('label', {}, 'name in game'), el('input', { id: 'ncTitle', placeholder: "empty = the donor's name" }), el('span', { class: 'muted' }, 'shown in the Autoshow and garage')),
     el('div', { class: 'field' }, el('label', {}, 'short name'), el('input', { id: 'ncShort', placeholder: 'empty = same as the name' })),
     el('div', { class: 'field' }, el('label', {}, 'offer no.'), el('input', { id: 'ncOffer', type: 'number', value: d.offer })),
-    el('div', { class: 'field' }, el('label', {}, 'output'), el('input', { id: 'ncOut', value: d.out_dir })),
+    el('div', { class: 'field' }, el('label', {}, 'output'), el('input', { id: 'ncOut', value: d.out_dir }),
+      window.pywebview?.api?.choose_path ? el('button', { onclick: async () => { const box = document.getElementById('ncOut'); const picked = await window.pywebview.api.choose_path('output', box.value); if (picked) box.value = picked; } }, 'Browse…') : ''),
+    el('p', { class: 'muted' }, 'The folder is remembered for next time.'),
     el('div', { class: 'field' }, el('label', {}, 'export as'), el('label', { class: 'chk' }, el('input', { type: 'checkbox', id: 'nc_xenia', checked: true }), ' Xenia folder  '), el('label', { class: 'chk' }, el('input', { type: 'checkbox', id: 'nc_stfs' }), ' console package (STFS, for a modded 360)')),
     el('div', { class: 'field' }, el('label', {}, ''), el('label', { class: 'chk' }, el('input', { type: 'checkbox', id: 'ncOpen', checked: true }), ' include the file that is open now')),
     el('div', { class: 'field' }, el('button', { onclick: () => stageFile(false) }, 'Stage this file'), el('button', { onclick: () => stageFile(true) }, 'Clear staged'), el('span', { class: 'muted' }, d.staged.length ? 'staged: ' + d.staged.join(', ') : 'nothing staged')),
@@ -724,9 +986,9 @@ function renderFile() {
     const probs = st.sum.problems;
     box.append(el('h3', {}, '3. Save'),
       el('p', {}, o ? `Open: ${src ? src.label : o.source} - ${o.member}` : 'Open: a file from disk'),
-      o ? el('div', { class: 'field' }, el('button', { class: 'primary', disabled: !(src && src.writable), onclick: () => saveBack(false) }, o.source === 'game' ? 'Save into game' : 'Save into DLC'),
+      o ? el('div', { class: 'field' }, el('button', { class: 'primary', disabled: !(src && src.writable), onclick: () => saveBack(false) }, 'Apply to existing car'), el('button', {onclick: exportCarZip}, 'Export car ZIP…'),
         src && !src.writable ? el('span', { class: 'muted' }, src.why) : '') : '',
-      o && o.source === 'game' ? el('p', { class: 'muted' }, 'This replaces the car\'s file inside the extracted game (a backup <zip>.bak is made once). A DLC cannot replace a base-game car: the game uses its own files first, so edits to a game car only take effect when saved into the game itself.') : '',
+      o && o.source === 'game' ? el('p', { class: 'muted' }, 'Apply updates all staged models, textures and matching stripped companions inside the existing car ZIP; the car ID is kept. A backup <zip>.bak is made once. GoD/ISO: export a replacement ZIP and use it in an extracted game copy.') : '',
       o && o.source !== 'game' ? el('p', { class: 'muted' }, 'This replaces the file inside the DLC package (a backup <zip>.bak is made once). Close Xenia first: nothing is written while it is running. If Xenia has this pack installed from an earlier copy, copy the changed package over again.') : '',
       el('div', { class: 'field' }, el('input', { id: 'savePath', placeholder: 'C:\\path\\to\\Car.carbin', value: st.sum.path }), el('button', { onclick: savePath }, 'Save to path')),
       ...cloneSection(),
@@ -916,18 +1178,85 @@ function setTab(name) {
   if (name !== 'skeleton') clearSkel();
   for (const b of document.querySelectorAll('#tabs button')) b.classList.toggle('on', b.dataset.tab === name);
   for (const t of document.querySelectorAll('.tab')) t.hidden = t.id !== 'tab-' + name;
+  if (name === 'model' && place.group) activatePlacement();
+  if (name === 'part' && st.sel >= 0) partGizmo.select(st.sel);
 }
 for (const b of document.querySelectorAll('#tabs button')) b.addEventListener('click', () => { setTab(b.dataset.tab); if (b.dataset.tab === 'archive') renderArchive(); if (b.dataset.tab === 'strings') renderStrings(); if (b.dataset.tab === 'physics') renderPhysics(); if (b.dataset.tab === 'skeleton') renderSkeleton(); if (b.dataset.tab === 'parts') workflow.renderClipboard(); });
 
 function resetView() {
   st.viewGeneration++;
+  partGizmo.detach();
   clearPlacement();
-  st.sel = -1; st.hidden.clear(); st.lodReset = true; st.selLight = -1; st.arch = null; st.atlas.clear(); st.texMats.clear(); st.texVer++; st.free = null; st.overwrite = new Set(); st.texRect = null;
+  st.sel = -1; st.hidden.clear(); st.touched.clear(); st.lodReset = true; st.selLight = -1; st.arch = null; st.atlas.clear(); st.texMats.clear(); st.texVer++; st.free = null; st.overwrite = new Set(); st.texRect = null;
   for (const g of st.groups.values()) { world.remove(g); g.traverse(object => object.geometry?.dispose()); }
-  st.groups.clear();
-  buildLodBar(); buildTree(); renderPart(); renderLights(); renderExhausts(); renderFile();
+  st.groups.clear(); st.wheelLayout = null; clearWheels(); clearCockpit();
+  buildLodBar(); buildTree(); renderPart(); renderModel(); renderLights(); renderExhausts(); renderFile();      // renderModel: the Custom models tab said "Open a .carbin first." after a car was opened
   $('#fileName').textContent = `${st.sum.name} · ${(st.sum.size / 1024).toFixed(0)} KB`;
+  buildSiblings();
   loadAll().then(frame);
+}
+
+function clearCarView() {
+  st.viewGeneration++;
+  partGizmo.detach(); clearPlacement(); clearWheels(); clearCockpit(); clearPhys(); clearSkel();
+  for (const group of st.groups.values()) {world.remove(group); group.traverse(object => object.geometry?.dispose());}
+  st.groups.clear(); st.geom.clear(); invalidateTextures();
+  st.sum = null; st.sel = -1; st.selLight = -1;
+  st.hidden.clear(); st.touched.clear(); st.filter = ''; $('#filter').value = '';
+  st.wheelLayout = null; st.phys = null; st.skel = null; st.arch = null; st.archSel = null;
+  st.cloneDef = null; st.cloneResult = null; st.free = null; st.texFile = null; st.texRect = null; texAtlasImg = null;
+  st.objText = null; st.objInfo = null; st.importTarget = null; st.modelTarget = null;
+  st.overwrite.clear(); st.siblingNames = null;
+  $('#tree').replaceChildren(); $('#lodBar').replaceChildren();
+  $('#siblings').hidden = true; $('#siblings').replaceChildren();
+  $('#fileName').textContent = 'no car open';
+  grid.position.y = 0; drawSelection(); drawOverlays(); drawExtras();
+  renderPart(); renderModel(); renderLights(); renderExhausts(); renderFile(); workflow.renderClipboard();
+  updateGizmoUI(); busy.end(); setTab('cars'); wake();
+}
+
+async function unloadCar() {
+  if (partGizmo.busy) return status('Wait for the current edit to finish.');
+  let discard = false;
+  if (place.group) {
+    if (!confirm('Unload this car and discard the custom model you are positioning?')) return;
+    discard = true;
+  }
+  try {await post('/api/unload', {discard});}
+  catch (error) {
+    if (!error.requires_discard) return status(error.message, true);
+    if (!confirm(error.message)) return;
+    try {await post('/api/unload', {discard: true});}
+    catch (failure) {return status(failure.message, true);}
+  }
+  clearCarView(); status('Car unloaded. Your game paths and copied part are kept.');
+}
+
+// A car is several model files: the driving model (low detail interior), the close-up / photo model and the cockpit (sharp interior).
+// This lets you switch between them without going back to the car list.
+async function buildSiblings() {
+  const box = $('#siblings'), o = st.sum?.origin; box.hidden = true; box.replaceChildren(); st.siblingNames = null;
+  if (!o) return;
+  const car = o.source === 'game' ? o.archive.split('/').pop().replace(/\.zip$/i, '') : (o.member.match(/^media\/cars\/([^/]+)\//i) || [])[1];
+  if (!car) return;
+  const generation = st.viewGeneration;
+  try {
+    const labels = [[`${car}.carbin`, 'driving model'], [`${car}_lod0.carbin`, 'close-up / photo model'], [`${car}_cockpit.carbin`, 'cockpit (sharp interior)']];
+    const members = await workflow.models({ source: o.source, car });
+    if (generation !== st.viewGeneration) return;
+    const base = m => m.member.split(/[\\/]/).pop().toLowerCase();
+    if (generation === st.viewGeneration) { st.siblingNames = new Set(members.map(base)); updateGizmoUI(); }
+    const found = labels.map(([name, label]) => ({ label, member: members.find(m => base(m) === name.toLowerCase()) })).filter(x => x.member);
+    if (found.length < 2) return;
+    const current = o.member.split(/[\\/]/).pop().toLowerCase();
+    box.append(...found.map(x => el('option', { value: x.member.member, selected: base(x.member) === current }, 'Model: ' + x.label)));
+    box.onchange = () => {
+      const pick = found.find(x => x.member.member === box.value);
+      if (pick) workflow.importCar({ source: o.source, car }, pick.member).then(() => {});
+      box.value = o.member;                                   // the list is rebuilt for the file that opens; if the switch is cancelled this keeps the right entry
+    };
+    box.hidden = false;
+  } catch (e) { /* the switcher is optional */ }
 }
 function frame() {
   const box = new THREE.Box3().setFromObject(world);
@@ -948,8 +1277,8 @@ addEventListener('drop', async e => {
   if (/\.(fbx|glb|gltf|obj)$/i.test(f.name)) { if (!st.sum) { status('open a .carbin first, then drop the model', true); return; } await loadModelFile(f); return; }
   try { st.sum = await api('/api/open', { method: 'POST', body: await f.arrayBuffer(), headers: { 'X-Name': f.name } }); resetView(); } catch (err) { status('could not open: ' + err.message, true); }
 });
-$('#btnUndo').addEventListener('click', async () => { st.sum = await post('/api/undo', {}); afterChange('all'); });
-$('#btnRedo').addEventListener('click', async () => { st.sum = await post('/api/redo', {}); afterChange('all'); });
+$('#btnUndo').addEventListener('click', async () => { if (partTools.undoPlacement()) return; st.sum = await post('/api/undo', {}); afterChange('all'); });
+$('#btnRedo').addEventListener('click', async () => { if (partTools.redoPlacement()) return; st.sum = await post('/api/redo', {}); afterChange('all'); });
 addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
   if (e.ctrlKey && e.key.toLowerCase() === 'z') { e.preventDefault(); $('#btnUndo').click(); }
@@ -961,7 +1290,7 @@ $('#btnSave').addEventListener('click', async () => {
 });
 $('#btnExport').addEventListener('click', () => exportObj(null));
 $('#filter').addEventListener('input', e => { st.filter = e.target.value; buildTree(); applyVisibility(); });
-for (const id of ['optWire', 'optBox', 'optLights', 'optEx', 'optHidden', 'optTex', 'optNormals', 'optBoxes']) $('#' + id).addEventListener('change', applyVisibility);
+for (const id of ['optCockpit', 'optWheels', 'optWire', 'optBox', 'optLights', 'optEx', 'optHidden', 'optTex', 'optNormals', 'optBoxes']) $('#' + id).addEventListener('change', applyVisibility);
 
 // ---------------------------------------------------------------------------------------------- textures in the viewer, overlays, hide / isolate
 function invalidateTextures() {
@@ -974,9 +1303,10 @@ function atlasFor(profile) {
   const mode = $('#optTex').value;
   if (mode === 'off') return null;
   if (mode === 'auto') return profile.atlas;
-  if (mode === 'damage') return profile.atlas === 'nodamage' ? 'damage' : profile.atlas;
-  return mode; // Explicitly labelled raw-atlas inspection modes.
+  if (mode === 'damage') return { nodamage: 'damage', lights: 'damagelights' }[profile.atlas] || profile.atlas;
+  return profile.atlas === mode ? mode : null;     // "inspect ... atlas": only the parts that read that atlas show it (see meshMaterial)
 }
+const INSPECT_MODES = ['nodamage', 'lights', 'interior'];
 function atlasTexture(name) {
   if (st.atlas.has(name)) return st.atlas.get(name) || null;
   const revision = st.texVer;
@@ -987,19 +1317,26 @@ function atlasTexture(name) {
     st.atlas.set(name, tex);
     for (const material of st.texMats.values()) material.dispose();
     st.texMats.clear(); applyVisibility(); wake();
-  }, undefined, () => { if (revision === st.texVer) { st.atlas.set(name, false); status('Preview texture unavailable: ' + name, true); } });
+  }, undefined, () => { if (revision === st.texVer) { st.atlas.set(name, false); if (name !== 'interior_emissive') status('Preview texture unavailable: ' + name, true); } });   // 6 stock cars have no emissive atlas: not worth an error
   return null;
 }
-function meshMaterial(m, sec) {
-  if (!st.sum.origin || $('#optTex').value === 'off') return material(m.userData.mat);
-  const profile = previewMaterial(m.userData.mat, sec.pool);
+function meshMaterial(m, sec, cockpit = false) {
+  const mode = $('#optTex').value;
+  if (!st.sum.origin || mode === 'off') return material(m.userData.mat);
+  const profile = previewMaterial(m.userData.mat, sec.pool, cockpit || /_cockpit\.carbin$/i.test(st.sum.origin?.member || '') ? 'cockpit' : 'body');
+  if (INSPECT_MODES.includes(mode) && profile.atlas !== mode) {          // inspecting one atlas: the parts that do not read it stay plain grey
+    if (!st.texMats.has('plain')) st.texMats.set('plain', new THREE.MeshStandardMaterial({ color: 0x555b61, roughness: 0.9, metalness: 0, side: THREE.DoubleSide }));
+    return st.texMats.get('plain');
+  }
   const atlas = atlasFor(profile);
   const tex = atlas ? atlasTexture(atlas) : null;
   if (atlas && !tex) return material(m.userData.mat);
-  const key = (atlas || 'solid') + '|' + m.userData.mat;
+  const glow = profile.emissiveAtlas && mode === 'auto' ? atlasTexture(profile.emissiveAtlas) : null;        // lit dial faces; false/null while it loads
+  const key = (atlas || 'solid') + '|' + m.userData.mat + (glow ? '|lit' : '');
   if (!st.texMats.has(key)) {
-    const { atlas: unused, ...options } = profile;
-    st.texMats.set(key, new THREE.MeshStandardMaterial({ ...options, map: tex, side: THREE.DoubleSide }));
+    const { atlas: unused, emissiveAtlas: unusedGlow, ...options } = profile;
+    const extra = glow ? { emissive: 0xffffff, emissiveMap: glow, emissiveIntensity: 1.3 } : {};
+    st.texMats.set(key, new THREE.MeshStandardMaterial({ ...options, ...extra, map: tex, side: THREE.DoubleSide }));
   }
   return st.texMats.get(key);
 }
@@ -1124,9 +1461,26 @@ async function fillStrings() {
   } catch (e) { box.replaceChildren(el('p', { class: 'warn' }, e.message)); }
 }
 
-const workflow = createWorkflow({ $, el, st, api, post, status, setTab, resetView, afterChange, selectSection });
+const partTools = createPartTools({ $, el, st, place, run, status, setTab, selectSection, syncPlaceFields });
+const partGizmo = createPartGizmo({THREE, control: tc, parent: overlay,
+  getTarget(index) {
+    const section = st.sum?.sections[index], group = st.groups.get(index);
+    if (!section || !group?.visible || !section.verts || !group.children.some(m => m.visible)) return null;
+    return {index, group, pivot: section.offset, name: section.name};
+  },
+  commit: args => run('transform', {...args, both_models: $('#partBoth').checked && canPairModels()}, args.sections),
+  previewChanged() {drawSelection(); wake();}, stateChanged: updateGizmoUI});
+for (const button of document.querySelectorAll('#transformTools [data-gizmo-mode]')) button.addEventListener('click', () => setGizmoMode(button.dataset.gizmoMode));
+const workflow = createWorkflow({ $, el, st, api, post, status, setTab, resetView, afterChange, selectSection, busy, diag });
 $('#btnCars').addEventListener('click', () => setTab('cars'));
+$('#btnUnload').addEventListener('click', unloadCar);
 $('#btnSettings').addEventListener('click', () => { workflow.renderSettings(); setTab('settings'); });
+$('#btnCustomModel').addEventListener('click', () => {
+  if (!st.sum) { setTab('cars'); return status('Import a car from Cars, then add your custom model.', true); }
+  setTab('model'); renderModel(); if (!place.group) $('#modelIn').click();
+});
+$('#btnApplyCar').addEventListener('click', applyExistingCar);
+$('#btnCarZip').addEventListener('click', exportCarZip);
 $('#btnDlc').addEventListener('click', () => { renderFile(); setTab('file'); if (!st.sum) status('Import a car before exporting DLC.', true); });
 
 async function init() {
@@ -1135,7 +1489,8 @@ async function init() {
   await refreshLibrary();
   if (s.open) { st.sum = await api('/api/summary'); resetView(); }
   workflow.renderClipboard();
-  if (st.lib.needs_setup) { setTab('settings'); status(st.lib.setup_error || 'Set your FH1 game path in Settings to start.', true); }
+  if (st.lib.needs_setup) { setTab('settings'); status(st.lib.setup_error || 'Set your FH1 game path in Settings to start.', !!st.lib.setup_error); }
   else if (!s.open) setTab('cars');
 }
 init().catch(e => status(e.message, true));
+if (window.__editor) window.__editor.reopen = async () => { st.sum = await api('/api/summary'); resetView(); };   // testing aid, see #debug above

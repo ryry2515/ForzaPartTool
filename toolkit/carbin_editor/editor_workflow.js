@@ -1,13 +1,13 @@
 import { preferredModel } from './library_actions.mjs';
 
-export function createWorkflow({ $, el, st, api, post, status, setTab, resetView, afterChange, selectSection }) {
+export function createWorkflow({ $, el, st, api, post, status, setTab, resetView, afterChange, selectSection, busy, diag }) {
   let rows = [], query = '', selected = null, donor = null, clip = null, generation = 0;
   const showError = error => status(error.message, true);
 
   async function choosePath(kind, input) {
     try {
       if (!window.pywebview?.api) throw new Error('Enter the full path in the field. Native Browse is available in the desktop app.');
-      const value = await window.pywebview.api.choose_path(kind);
+      const value = await window.pywebview.api.choose_path(kind, kind === 'dlc' ? '' : input.value || '');
       if (value) input.value = kind === 'dlc' && input.value.trim() ? input.value + ';' + value : value;
     } catch (error) { showError(error); }
   }
@@ -16,11 +16,12 @@ export function createWorkflow({ $, el, st, api, post, status, setTab, resetView
     const lib = st.lib || { config: { game: '', dlc: [] }, needs_setup: true };
     const game = el('input', { id: 'cfgGame', value: lib.config.game || '', placeholder: 'FH1 game folder, GoD container, or ISO' });
     const dlc = el('input', { id: 'cfgDlc', value: (lib.config.dlc || []).join(';'), placeholder: 'DLC folders, separated by ;' });
-    const notice = el('p', { class: lib.needs_setup ? 'warn' : 'ok', id: 'setupMessage' }, lib.setup_error || (lib.needs_setup ? 'Set your FH1 game path to start. Add your DLC folder to include its cars.' : 'Game path is ready.'));
+    const notice = el('p', { class: lib.needs_setup || st.libraryError ? 'warn' : 'ok', id: 'setupMessage' }, st.libraryError || lib.setup_error || (lib.needs_setup ? 'Set your FH1 game path to start. Add your DLC folder to include its cars.' : 'Game path is ready and saved on this computer.'));
     $('#tab-settings').replaceChildren(el('h3', {}, 'Settings'), notice,
-      el('label', { for: 'cfgGame' }, 'Forza Horizon 1 game'),
+        el('label', { for: 'cfgGame' }, 'Forza Horizon 1 base game'),
       el('div', { class: 'field' }, game),
-      el('div', { class: 'field' }, el('button', { onclick: () => choosePath('game', game) }, 'Browse folder'), el('button', { onclick: () => choosePath('image', game) }, 'Browse ISO / GoD file')),
+      el('div', { class: 'field' }, el('button', { onclick: () => choosePath('game', game) }, 'Browse folder'), el('button', { onclick: () => choosePath('image', game) }, 'Browse game file')),
+        el('p', { class: 'muted' }, 'Choose the base game: ISO, GoD container/.data folder, or extracted game/default.xex. Xenia content folders belong in the DLC field below.'),
       el('label', { for: 'cfgDlc' }, 'DLC content folders'), el('div', { class: 'field' }, dlc),
       el('button', { onclick: () => choosePath('dlc', dlc) }, 'Add DLC folder'),
       el('p', { class: 'muted' }, 'For Xenia, use content\\0000000000000000\\4D5309C9\\00000002. Only cars from your own game and installed DLC are listed.'),
@@ -28,10 +29,11 @@ export function createWorkflow({ $, el, st, api, post, status, setTab, resetView
         event.target.disabled = true;
         try {
           st.lib = await post('/api/library/config', { game: game.value, dlc: dlc.value.split(';') });
+          st.libraryError = ''; $('#errorBanner').hidden = true;
           st.libSel = null; selected = null; donor = null;
           renderSettings();
           await loadCars();
-          if (!st.lib.needs_setup) { setTab('cars'); status('Paths saved. Right-click a car and choose Import.'); }
+            if (!st.lib.needs_setup) { setTab('cars'); status(st.lib.path_notice || 'Paths saved. Right-click a car and choose Import.'); }
         } catch (error) { notice.textContent = error.message; notice.className = 'warn'; showError(error); }
         finally { event.target.disabled = false; }
       } }, 'Save paths & load cars'));
@@ -43,11 +45,13 @@ export function createWorkflow({ $, el, st, api, post, status, setTab, resetView
     const sources = st.lib?.sources || [];
     if (!sources.length) return;
     status('Indexing game and DLC cars...');
+    const t0 = performance.now(); busy.start('Indexing game and DLC cars…');
     const results = await Promise.allSettled(sources.map(async source => {
       const { cars } = await api('/api/library/cars?source=' + encodeURIComponent(source.id));
       return cars.map(car => ({ source: source.id, car, label: source.kind === 'game' ? 'Base game' : source.label }));
     }));
     if (mine !== generation) return;
+    busy.end(); diag('cars_indexed', { ms: Math.round(performance.now() - t0), sources: sources.length });
     const errors = [];
     for (let i = 0; i < results.length; i++) {
       const result = results[i];
@@ -120,12 +124,15 @@ export function createWorkflow({ $, el, st, api, post, status, setTab, resetView
     try {
       if (st.sum?.undo && !confirm('Import another model? Unsaved edits to the current model will be discarded. Export or stage them first if you want to keep them.')) return;
       status(`Importing ${row.car}...`);
+      busy.start(`Opening ${row.car}…`);
       model ||= preferredModel(row.car, await models(row));
       if (!model) throw new Error('No main car model was found');
+      const t0 = performance.now();
       st.sum = await post('/api/library/open', { source: row.source, archive: model.archive, member: model.member });
+      st.loadMarks = { car: row.car, serverMs: Math.round(performance.now() - t0), parts: st.sum.sections.length };
       resetView(); setTab('part');
       renderClipboard();
-    } catch (error) { showError(error); }
+    } catch (error) { busy.end(); showError(error); }
   }
 
   async function inspectDonor(row, model) {
@@ -198,8 +205,9 @@ export function createWorkflow({ $, el, st, api, post, status, setTab, resetView
   function openPaste() { renderClipboard(); setTab('parts'); }
   addEventListener('keydown', event => {
     if (!(event.ctrlKey || event.metaKey) || event.target.closest('input,textarea,select,[contenteditable=true]')) return;
+    if (event.key.toLowerCase() === 'c' && getSelection()?.toString()) return;
     if (event.key.toLowerCase() === 'c') { event.preventDefault(); copyCurrent(); }
     if (event.key.toLowerCase() === 'v') { event.preventDefault(); openPaste(); }
   });
-  return { loadCars, renderCars, renderSettings, renderClipboard, copyCurrent, openPaste };
+  return { loadCars, renderCars, renderSettings, renderClipboard, copyCurrent, openPaste, importCar, models };
 }

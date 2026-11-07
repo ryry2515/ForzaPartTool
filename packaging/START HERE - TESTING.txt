@@ -1,0 +1,77 @@
+FH1 Carbin Editor v2 - test build 15
+
+What is new in build 15:
+- Forza Horizon 6 car import is not part of this build (it is not finished and will come as a later update).
+Build 10 (a bug sweep: every base-game and DLC car file was opened, rebuilt and checked, and the edit operations were fuzzed on ~300 cars):
+- Dash and gauges: the instrument dials are lit with their numbers (speedometer, rev counter, fuel, warning icons), the centre display is a dark screen, and the steering wheel's airbag label is no longer a red lens.
+- Saving no longer fails on cars whose stock file already has a harmless oddity (about 1 car file in 7: a flat part with zero thickness, or two buffers sharing a key). Only problems YOUR edit adds are reported.
+- "Replace geometry" on two different parts of one car no longer gives both the same internal key (that failed validation).
+- Rename: part names with spaces, accents or symbols are refused with an explanation (they made the saved file unreadable). A new custom part called "my wing" is saved as "my_wing".
+- Moving, rotating or scaling a part with "Driving + photo models" ticked no longer fails when the close-up model does not have that part (e.g. the Alfa 8C hood): it moves where it exists. Cars without a close-up file can no longer try to pair.
+- Lights and exhausts: out-of-range indexes are refused instead of corrupting the file.
+- The Custom models tab no longer says "Open a .carbin first." after a car was opened.
+- The sharp-interior preview follows Hide / Isolate / the filter box, and stops replacing a part once you edit it. Wheel and floor height are right for the close-up model too.
+- Stock placeholder parts with broken UVs no longer send NaN to the viewer.
+- Known and left alone: FOR_F350SuperDuty_08_lod0.carbin is an empty 1 KB placeholder in the game and cannot be opened.
+
+Build 9:
+- Sharp interior fixed: the dash, trim, stitching, wood, suede and gauge parts of the cockpit model now use the interior texture (they were white before). Checked on the Fiesta, Alfa 8C and SL65.
+
+Build 8:
+- Wheels option is now a list: wheels at the corners / no wheels / wheel as in the file (centre). "No wheels" hides them and puts the floor under the car body, for cars that look too high.
+- The texture list's first entry is now called "all textures (body, lamps, interior)".
+
+Build 7 (on top of builds 5 and 6):
+- Cars no longer sit too low: the floor grid is now where the tyres touch the ground, and the corner wheels are at the right height.
+- Sharp interior: the driving model shows the cockpit model's sharp seats, dash gauges, steering wheel and interior in place of its low-detail interior (tick box "sharp interior"; preview only, no file is changed).
+- Texture modes fixed: "damage" shows the damaged body and lamp textures; the "inspect ... atlas" modes show only the parts that read that atlas and leave the rest plain grey.
+
+Build 6:
+- The underside of every car is drawn as a plain dark panel instead of showing livery and blue.
+- Wheels: the car file holds one wheel at the centre; the viewer now draws it at the four corners (tick box "wheels at the corners"). Select the Wheel part to move the real one.
+- Model switcher next to the file name: driving model, close-up / photo model, cockpit (the sharp interior).
+
+Build 5:
+- A custom model can now be added as its own part ("as a separate part", the default).
+  It shows in the part list, can be selected and moved/rotated/scaled again at any time,
+  and stays separate when you save and in Forza editors. Merging into an existing part
+  is still there if you want it.
+- The output folder is remembered. Export car ZIP and Export as new DLC car open in the
+  folder you used last time, and the DLC panel has a Browse button.
+- A loading bar shows while a car loads (with how many parts are done) and while the car
+  list is indexed or an export is built. Car loading is also faster: the car you opened
+  no longer waits for the list of all cars, and the 3D scene is built in fewer steps.
+- Load times are written to  %APPDATA%\FH1CarbinEditor\load-times.log  (on your computer only).
+  If loading still feels slow, send me that file and say which step was slow.
+
+Extract the whole ZIP, then run FH1 Carbin Editor.exe.
+Windows WebView2 Runtime is required. Python and an external browser are not needed.
+
+1. In Settings, select your own FH1 game and DLC folder. Save paths & load cars.
+   Xenia's title/content folder contains DLC, not the base game. If a valid base
+   game is already saved, selecting that DLC folder keeps the game path and adds
+   the DLC path automatically. Otherwise the editor explains which field to use.
+2. Right-click a car in Cars and choose Import.
+3. Click Custom model, then choose FBX, GLB, glTF or OBJ. GLB is best for embedded resources.
+4. Position the orange model. Under "Where it goes" pick "as a separate part" (give it a name)
+   or merge it into an existing part/upgrade slot. Add keeps the existing geometry;
+   replace removes the target geometry. Driving + photo model is checked by default.
+5. Check Double-sided if the model should be visible from both directions.
+   This exports extra back faces in every chosen LOD. It doubles imported triangles.
+6. Add to car. Apply to existing car saves all staged edits together, keeping the
+   same car ID and making a .bak of the ZIP. Close Xenia first.
+   GoD/ISO/STFS: Export car ZIP, then replace the archive in an extracted game/package
+   copy. Set that extracted copy in Settings for future direct saves.
+7. Export as new DLC car intentionally creates another car ID. Use it for a separate car.
+
+Right-click parts or the orange model for Copy coordinates / Paste coordinates.
+Right-click an existing part for Merge into. Named source slots remain when emptied.
+
+Please test driving, photo mode, close-up views, and viewing the model from both sides.
+Automated tests check the exported geometry and files; gameplay remains to be verified.
+New shop-upgrade creation is not included yet. Existing upgrade slots are supported.
+The viewport uses an approximation of FH1 materials. Separate cockpit/wheel files remain separate.
+Importing modern (Forza Horizon 6) models and cars is not in this build yet.
+
+Game files, saved paths and personal settings are not included in this ZIP.
+Errors stay visible until dismissed. Use Copy error and the bug report template.

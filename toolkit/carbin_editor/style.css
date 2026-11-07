@@ -85,3 +85,19 @@ textarea { width: 100%; min-height: 220px; background: var(--panel2); color: var
 #tab-parts > select, #tab-parts > input { width: 100%; margin: 6px 0; }
 #tab-settings .field input { width: 100%; }
 #tab-parts .field label { overflow-wrap: anywhere; font-size: 11px; }
+#errorBanner:not([hidden]) { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-top: 1px solid var(--bad); background: var(--panel); }
+#errorBanner label { color: var(--bad); white-space: nowrap; }
+#errorBanner textarea { flex: 1; min-height: 48px; height: 70px; max-height: 180px; resize: vertical; user-select: text; }
+#errorBanner button { flex: 0 0 auto; }
+#transformTools { position: absolute; bottom: 12px; left: 10px; right: 10px; z-index: 3; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
+#gizmoTarget { width: 100%; color: var(--muted); }
+[data-gizmo-mode].on { border-color: var(--accent); color: var(--accent); }
+
+/* loading bar over the viewport: shows what the editor is doing and how far it is */
+#loading { position: absolute; left: 50%; top: 46%; transform: translate(-50%, -50%); width: min(420px, 80%); padding: 12px 14px; border-radius: 8px; z-index: 5;
+  background: color-mix(in srgb, var(--panel) 92%, transparent); border: 1px solid var(--line); box-shadow: 0 6px 24px rgba(0, 0, 0, .35); pointer-events: none; }
+#loading .track { height: 8px; border-radius: 4px; background: color-mix(in srgb, var(--line) 70%, transparent); overflow: hidden; }
+#loading #loadFill { height: 100%; width: 0; border-radius: 4px; background: #4aa3ff; transition: width .12s linear; }
+#loading.indeterminate #loadFill { width: 35% !important; animation: loadslide 1.1s ease-in-out infinite; }
+#loading span { display: block; margin-top: 8px; font-size: 12px; opacity: .85; text-align: center; }
+@keyframes loadslide { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }

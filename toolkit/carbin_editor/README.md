@@ -1,5 +1,19 @@
 # FH1 Carbin Editor
 
+## 1.2.0 preview: coordinates and merges
+
+Right-click a part in the tree or viewport and choose **Copy coordinates**, then right-click another part or a model being placed and choose **Paste coordinates**. This copies XYZ in metres (the part pivot / imported model origin), keeping rotation and scale. Buttons in Part and Add model provide the same actions. Undo/redo covers coordinate pastes, including a model still being placed.
+
+**Merge into…** moves an existing part's geometry into another named part. The target retains its existing identity and upgrade assignment; the source stays as an empty slot. Empty bumper/hood/side-skirt slots remain valid targets. For an imported FBX/GLB/OBJ, select the target in Add model and use Add to car with add or replace mode.
+
+**Custom model…** opens the model picker. **Double-sided** adds reverse-facing triangles with inverted normals to the exported geometry, so FH1 can draw both sides. It doubles the imported triangle count. Simplification happens before back faces are added.
+
+**Driving + close-up / photo model** is enabled by default for library cars. Both files must have the named target (and source for existing-part merges). Undo/redo restores both together. Opening the counterpart shows the staged edit. Paired texture imports map UVs into the selected rectangle and stage the shared atlases once. Cockpit/wheel files remain separate.
+
+**Apply to existing car** atomically updates all staged files and the open model inside the existing ZIP, regenerating matching stripped companions. The car ID and other archive members stay intact; a `.bak` preserves the original ZIP. Close Xenia before applying. **Export car ZIP…** writes the same replacement archive to a chosen folder without changing the installed game. For GoD/ISO/STFS inputs, use the replacement ZIP in an extracted game/package copy. **Export as new DLC car** deliberately creates a new car identity. Download .carbin saves only the open model.
+
+This update uses existing upgrade slots. It does not add new upgrade database rows or automatically convert Assetto Corsa assets, materials, skeletons or physics. Geometry/API checks use real FH1 assets; resulting edits still need testing in Xenia or on a modded Xbox 360.
+
 A `.carbin` file is a Forza Horizon 1 car model: the body, doors, bumpers, glass, interior and so on, as named parts made of triangles, plus the car's light points and exhaust flame points.
 This editor lets you look at a car in 3D, move and reshape its parts, **drop in your own model (FBX, GLB / glTF or OBJ), drag it into place and add it onto the car**, and save the result either into a **DLC** package or into an **extracted copy of the game**.
 

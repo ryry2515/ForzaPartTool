@@ -48,16 +48,7 @@ class PartClipboard:
         missing = sorted(set(mapping.values()) - available)
         if missing:
             raise ValueError('Map these materials to a destination material: ' + ', '.join(missing))
-        used_names = {s.name.lower() for s in car.sections}
         base = (name.strip() or src.name + '_copy')[:240]
-        try:
-            base.encode('latin-1')
-        except UnicodeEncodeError as exc:
-            raise ValueError('Part names must use Latin-1 characters') from exc
-        unique, suffix = base, 2
-        while unique.lower() in used_names:
-            unique = f'{base}_{suffix}'
-            suffix += 1
         delta = np.asarray(translate, dtype=np.float64)
         if delta.shape != (3,) or not np.isfinite(delta).all():
             raise ValueError('Part position must contain three finite numbers')
@@ -79,21 +70,60 @@ class PartClipboard:
                 uv = np.tile(swatches.get(material, (0.5, 0.5)), (pool.count, 1))
                 pieces.append(cg.Piece(material, lod, decoded.pos + delta, decoded.nrm,
                                        uv, cg.final_uv(decoded.uv1, sub.uvxf[4:8]), tris, swatch=True))
-        sh = cg.SHModel(car)
-        template = copy.deepcopy(next(sec for sec in car.sections if sec.subs))
-        template.name = unique
-        template.offset = list(np.asarray(src.offset) + delta)
-        candidate = fc.Carbin(car.header, list(car.sections) + [template], car.footer, car.type_id)
-        index = len(car.sections)
-        cg.rebuild_section(candidate, index, pieces, sh, seed=secrets.randbits(64), draw=True)
-        keys = {p.bone[1] for sec in car.sections for p in (sec.lod, sec.lod0) if p.count and len(p.bone) > 1}
-        for p in (template.lod, template.lod0):
-            if p.count:
+        return add_section(car, pieces, base, np.asarray(src.offset) + delta)
+
+
+def valid_part_name(name: str) -> bool:
+    """What the carbin reader accepts as a part name: 1-240 printable ASCII characters and no space. Anything else makes the saved file unreadable."""
+    return 1 <= len(name) <= 240 and all(32 < ord(c) < 127 for c in name)
+
+
+def clean_part_name(wanted: str) -> str:
+    """`wanted` with every character the file cannot hold (spaces, accents, symbols) replaced by an underscore."""
+    cleaned = ''.join(c if 32 < ord(c) < 127 else '_' for c in str(wanted or '').strip())[:200].strip('_')
+    return cleaned or 'part'
+
+
+def unique_name(car: fc.Carbin, wanted: str, taken=()) -> str:
+    """A part name nobody uses yet in `car` (or in `taken`, the names of a paired model): `wanted`, else wanted_2, wanted_3 ..."""
+    used = {s.name.lower() for s in car.sections} | {str(n).lower() for n in taken}
+    base = clean_part_name(wanted)
+    unique, suffix = base, 2
+    while unique.lower() in used:
+        unique = f'{base}_{suffix}'
+        suffix += 1
+    return unique
+
+
+def add_section(car: fc.Carbin, pieces, name: str, offset, template_index: int | None = None, taken=()) -> int:
+    """Append a NEW part (its own section, own name, own pivot) to `car` made of `pieces` and put it in the game's draw lists. -> the new part's index.
+    A part of its own stays selectable, movable and removable later, which merging geometry into an existing part is not."""
+    if not car.sections or not any(s.subs for s in car.sections):
+        raise ValueError('The destination needs an existing model part')
+    if len(car.sections) >= 65535:
+        raise ValueError('The model has too many parts')
+    if not pieces:
+        raise ValueError('There is no geometry to add')
+    pivot = np.asarray(offset, dtype=np.float64)
+    if pivot.shape != (3,) or not np.isfinite(pivot).all():
+        raise ValueError('Part position must contain three finite numbers')
+    unique = unique_name(car, name, taken)
+    sh = cg.SHModel(car)
+    ref = car.sections[template_index] if template_index is not None and 0 <= template_index < len(car.sections) and car.sections[template_index].subs else next(sec for sec in car.sections if sec.subs)
+    template = copy.deepcopy(ref)
+    template.name = unique
+    template.offset = list(pivot)
+    candidate = fc.Carbin(car.header, list(car.sections) + [template], car.footer, car.type_id)
+    index = len(car.sections)
+    cg.rebuild_section(candidate, index, pieces, sh, seed=secrets.randbits(64), draw=True)
+    keys = {p.bone[1] for sec in car.sections for p in (sec.lod, sec.lod0) if p.count and len(p.bone) > 1}
+    for p in (template.lod, template.lod0):
+        if p.count:
+            key = secrets.randbelow(0xFFFFFFFE) + 1
+            while key in keys:
                 key = secrets.randbelow(0xFFFFFFFE) + 1
-                while key in keys:
-                    key = secrets.randbelow(0xFFFFFFFE) + 1
-                p.bone = [1, key]
-                keys.add(key)
-        car.sections.append(template)
-        car.header = candidate.header
-        return index
+            p.bone = [1, key]
+            keys.add(key)
+    car.sections.append(template)
+    car.header = candidate.header
+    return index

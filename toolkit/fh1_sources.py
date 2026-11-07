@@ -184,11 +184,27 @@ class FolderReader:
         return path.lower() in self.entries
 
 
+def fh1_dlc_directory(path) -> Path | None:
+    """Recognize Xenia's FH1 title/DLC directories without treating DLC as a game."""
+    p = Path(path)
+    if p.name.lower() == '4d5309c9' and (p / '00000002').is_dir():
+        return p / '00000002'
+    if p.name == '00000002' and p.parent.name.lower() == '4d5309c9' and p.is_dir():
+        return p
+    return None
+
+
 def open_fh1_game(path) -> "BaseGame":
     """Games on Demand folder, an .iso, or an extracted game folder - whichever the user has."""
     p = Path(path) if path else None
     if not p or not p.exists():
         raise ValueError(f"FH1 game folder not found: {path}")
+    if p.is_file() and p.name.lower() == 'default.xex':
+        p = p.parent
+    elif p.is_dir() and p.name.lower().endswith('.data'):
+        container = p.with_name(p.name[:-5])
+        if container.is_file():
+            p = container
     if p.is_file() and p.suffix.lower() == ".iso":
         return BaseGame(ISOReader(p))
     cands = [p] if p.is_file() else [c for c in p.glob("**/*") if c.is_file() and (c.parent / (c.name + ".data")).is_dir()]
@@ -207,11 +223,17 @@ def open_fh1_game(path) -> "BaseGame":
         iso = next(iter(p.glob("**/*.iso")), None)
         if iso:
             return BaseGame(ISOReader(iso))
+    dlc = fh1_dlc_directory(p)
+    if dlc:
+        raise ValueError(
+            f'This is an FH1 DLC content folder, not the base game.\n'
+            f"Set 'DLC content folders' to: {dlc}\n"
+            "For 'FH1 game', choose the base game GoD container/.data folder, extracted game/default.xex, or ISO.")
     raise ValueError(
         f"Couldn't find Forza Horizon game data in {p}.\n"
         "Point 'FH1 game' at one of these:\n"
-        "  - the Games on Demand folder (…\\4D5309C9, containing 00007000)\n"
-        "  - an extracted game folder (containing default.xex and media\\db\\gamedb.slt)\n"
+        "  - the Games on Demand folder, container file, or its .data folder\n"
+        "  - an extracted game folder or its default.xex file\n"
         "  - a disc image (.iso)")
 
 

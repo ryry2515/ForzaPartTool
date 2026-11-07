@@ -36,6 +36,7 @@ def editor(tmp_path, monkeypatch):
         assert response.status == 200, data.decode(errors='replace')
         return json.loads(data)
 
+    call.port = httpd.server_port
     yield call
     httpd.shutdown()
     httpd.server_close()
@@ -93,6 +94,9 @@ def test_pasted_geometry_exports_and_reopens_as_dlc(editor, tmp_path):
     assert len(car.sections) == len(summary['sections']) + 1
     assert car.sections[-1].name == added_name
     assert not cg.validate(car)
+    stripped = str(Path(main['member']).with_name('stripped_' + Path(main['member']).name)).replace('\\', '/')
+    stripped = next(n for n in library.archive_zip(source, main['archive']).namelist() if n.lower() == stripped.lower())
+    assert library.read(source, main['archive'], stripped) == fc.build(car, stripped=True)
     # Both emitted formats must expose the same new car model.
     console = cl.Library(str(GAME), [str(Path(result['stfs']).parent)])
     console_source = next(s['id'] for s in console.sources() if s['kind'] == 'dlc')

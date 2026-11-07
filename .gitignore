@@ -1,15 +1,32 @@
-__pycache__/
+﻿__pycache__/
 *.pyc
 *.bak
-new_cars/
 *.egg-info/
 .venv/
-.runtime-smoke/
-.texture-debug/
+node_modules/
+build/
+dist/
+*.spec
+new_cars/
+# test runs and logs (never commit these)
 *.log
 native-smoke.json
 packaged-*.png
 packaged-*.json
-node_modules/build/
-dist/
-*.spec
+.runtime-smoke/
+.texture-debug/
+.custom-model-smoke-profile*/
+.gizmo-smoke-profile*/
+.packaged-*/
+.test-tmp-*/
+.ui-test-settings/
+.pytest_cache/
+# a game or save file must never end up here
+*.iso
+*.xex
+*.xds
+*.slt
+
+# browser profiles created by the native smoke tests
+.*-smoke*/
+.*smoke-profile*/

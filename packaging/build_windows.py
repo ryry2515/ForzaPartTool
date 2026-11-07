@@ -18,12 +18,12 @@ ROOT = Path(__file__).resolve().parent.parent
 TK = ROOT / "toolkit"
 ED = TK / "carbin_editor"
 MODULES = ["carbin_geom", "carbin_library", "atlas_paint", "clone_car", "dlc_builder", "fh1_sources", "lsb2", "physdef", "gr2", "gr2_curves",
-           "gr2_skeleton", "xds", "xlzx", "fh1_carbin", "stfs", "fm4_carbin", "carbin_parts", "editor_desktop", "webview"]
+           "gr2_skeleton", "xds", "xlzx", "fh1_carbin", "stfs", "fm4_carbin", "carbin_parts", "part_actions", "editor_desktop", "webview"]
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--version", default="1.1.0")
+    ap.add_argument("--version", default="2.0.0-test.4")
     ap.add_argument("--out", default=str(ROOT / "build"))
     a = ap.parse_args()
     import PyInstaller.__main__ as pi
@@ -37,12 +37,16 @@ def main():
             "--exclude-module", "matplotlib", "--exclude-module", "scipy", "--exclude-module", "pytest", "--exclude-module", "PIL"]
     for m in MODULES:
         args += ["--hidden-import", m]
-    for f in ("index.html", "app.js", "library_actions.mjs", "viewer_materials.mjs", "editor_workflow.js", "startup_diagnostics.js", "style.css"):
+    for f in ("index.html", "app.js", "library_actions.mjs", "viewer_materials.mjs", "part_tools.mjs", "part_gizmo.mjs", "editor_workflow.js", "startup_diagnostics.js", "style.css"):
         args += ["--add-data", f"{ED / f}{sep}."]
     args += ["--add-data", f"{ED / 'vendor'}{sep}vendor"]
     pi.run(args)
     app = dist / "FH1 Carbin Editor"
     (app / "README.txt").write_text(README.replace("{version}", a.version), encoding="utf-8")
+    for filename in ('START HERE - TESTING.txt', 'BUG REPORT TEMPLATE.txt'):
+        source = ROOT / 'packaging' / filename
+        if source.exists():
+            shutil.copyfile(source, app / filename)
     for f in ("LICENSE", "THIRD_PARTY_NOTICES.md", "SECURITY.md"):
         shutil.copy(ROOT / f, app / f)
     licenses = app / 'Third-party licenses'
@@ -90,10 +94,26 @@ No Python installation or external browser is needed. Windows WebView2 Runtime i
    A pasted part is independently selectable and transformable.
    Geometry uses destination materials/colour swatches. Donor textures, skeleton/animations
    and collision are not transferred by Copy parts.
-5. Add your own FBX, GLB/glTF or OBJ using Add model. Position with the gizmo,
+5. Add your own FBX, GLB/glTF or OBJ using Custom model. Position with the gizmo,
    map materials, select LODs and Apply. External glTF resources must be embedded;
    prefer GLB for a self-contained import.
-6. Export DLC opens Open / Save. Export creates a NEW car with its own IDs and files.
+   Right-click a part/imported model for Copy coordinates / Paste coordinates.
+   XYZ position is copied; rotation and scale stay as they are. Undo/redo is supported.
+   Merge into... combines a part into an existing named part/upgrade slot, including
+   an empty slot. The source slot is kept empty so header references remain intact.
+   Driving + photo model stages main and LOD0 together by default. Both files
+   need matching named parts. Double-sided adds real reverse-facing triangles
+   to every imported LOD, with inverted normals, so FH1 can draw both sides.
+   New shop upgrades and automatic Assetto Corsa conversion are not included.
+   This is a preview: validate exported edits in Xenia or on hardware before sharing.
+6. Apply to existing car updates the existing ZIP, preserving the car ID.
+   All staged files and the current model are written in one atomic swap, with
+   matching stripped companions regenerated. The original ZIP is backed up once.
+   This needs an extracted game or DLC folder. GoD, ISO and STFS are read only.
+   Export car ZIP writes a replacement ZIP to a chosen folder without changing
+   your install. Use that ZIP in an extracted game/package copy.
+   Download .carbin saves only the open model.
+7. Export as new DLC car creates a NEW car with its own IDs and files.
    Stage additional edited model files before changing models if needed; the open file
    is included automatically. Main and LOD0 are separate files: edit/stage both to cover
    driving and menus/photo mode. Choose Xenia folder or console STFS output.

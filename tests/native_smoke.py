@@ -50,7 +50,7 @@ def probe():
         assert result.get('canvas'), result
         wait_for('!!window.pywebview?.api?.choose_path')
         result['native_api'] = evaluate('Object.keys(window.pywebview.api)')
-        assert result['native_api'] == ['choose_path'], result['native_api']
+        assert sorted(result['native_api']) == ['choose_path', 'copy_text'], result['native_api']
         game = 'C:/Users/ryan/Downloads/Forza Modding Development/Assets and refrences/inputs/4D5309C9/00007000/DD04A22D0F8E35E0C3EE744E2B7A1346'
         dlc = 'C:/Users/ryan/Downloads/xenia_canary_windows/content/0000000000000000/4D5309C9/00000002'
         evaluate(f'document.querySelector("#cfgGame").value={json.dumps(game)}; document.querySelector("#cfgDlc").value={json.dumps(dlc)}; document.querySelector("#applySettings").click()')
