@@ -104,6 +104,7 @@ The editor serves itself to its window on `127.0.0.1` only, with a random per-ru
 
 ## Credits
 
+- The name **ForzaPartTool** comes from Warshack4874.
 - [three.js](https://threejs.org/) (MIT), bundled for the 3D view.
 - Granny `.gr2` handling follows the layout documented by the community (`toolkit/gr2.py`, MPL-2.0).
 - [Xenia](https://xenia.jp/) for running the game, and the Forza modding community for format knowledge.
