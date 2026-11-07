@@ -13,6 +13,10 @@ assert.equal(previewMaterial('carbon_fiber').atlas, 'shared:carbonFiber.xds');
 assert.equal(previewMaterial('grille1').atlas, 'shared:grille1.xds');
 // Low-detail seat/dash images live in nodamage, not the separate cockpit atlas.
 assert.equal(previewMaterial('interior', 'lod').atlas, 'nodamage');
+// the roof lining of the sharp interior is pushed back in depth so it cannot flicker through the body's roof panel
+assert.equal(previewMaterial('headliner', 'lod0', 'cockpit').atlas, 'interior');
+assert.equal(previewMaterial('headliner', 'lod0', 'cockpit').polygonOffset, true);
+assert.notEqual(previewMaterial('leather', 'lod0', 'cockpit').polygonOffset, true);
 assert.equal(previewMaterial('cockpit_smooth_plastic', 'lod0').atlas, 'interior');
 assert.equal(previewMaterial('body_2').color, previewMaterial('body').color);
 assert.equal(previewMaterial('window').depthWrite, false);

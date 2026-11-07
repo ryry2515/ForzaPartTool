@@ -1,6 +1,9 @@
-ForzaPartTool - test build 18
+ForzaPartTool - test build 19
 
-What is new in build 18:
+What is new in build 19:
+- The roof lining of the sharp-interior preview is drawn behind the body's roof panel, so it can no longer flicker through the roof as a pale patch.
+
+Build 18:
 - Your ForzaPartTool logo: the program icon, the mark in the header and the page icon. README has the logo at the top.
 
 Build 17:
