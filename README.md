@@ -1,11 +1,23 @@
-﻿# FH1 Carbin Editor
+<p align="center"><img src="docs/images/logo.png" width="140" alt="FH1 Carbin Editor logo"></p>
 
-A Windows desktop app for editing the cars of **Forza Horizon 1** (Xbox 360, played on Xenia or a modded console): look at a car in 3D, move and reshape its parts, add your own models, and export the result as a new DLC car or back into a copy of the game. Plus the Python libraries behind it for the game's file formats.
+<h1 align="center">FH1 Carbin Editor</h1>
 
-[Features](#features) · [File formats](#file-formats) · [Getting started](#getting-started) · [Building from source](#building-from-source) · [Tests](#tests) · [Known limitations](#known-limitations) · [Credits](#credits)
+<p align="center">A Windows desktop app for editing the cars of <b>Forza Horizon 1</b> (Xbox 360, on Xenia or a modded console).<br>
+3D model viewer, part editing, custom models and DLC export, plus Python libraries for the game's file formats.</p>
+
+<p align="center"><img alt="Windows" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078d4"> <img alt="Python" src="https://img.shields.io/badge/Python-3.10%2B-3776ab"> <img alt="License" src="https://img.shields.io/badge/license-MIT-green"></p>
+
+<p align="center"><a href="#screenshots">Screenshots</a> · <a href="#features">Features</a> · <a href="#file-formats">File formats</a> · <a href="#getting-started">Getting started</a> · <a href="#building-from-source">Building</a> · <a href="#known-limitations">Limitations</a></p>
 
 > You need your own copy of the game (a Games on Demand folder, an `.iso` or an extracted folder). Nothing from the game is in this repository. Modding is at your own risk: keep a backup of your game files and your save, and test one change at a time. Not affiliated with Microsoft, Turn 10 or Playground Games.
 
+## Screenshots
+
+![The editor with a car open: part list, 3D view with wheels at the corners, and the Part tab](docs/images/editor.jpg)
+*The editor: every part with its LODs on the left, the car in 3D (wheels drawn at the corners), tools on the right.*
+
+![The sharp interior of the cockpit model, with lit dials](docs/images/cockpit.jpg)
+*The sharp interior from the cockpit model, with lit dials, shown while editing the driving model.*
 ## Features
 
 **Viewer**

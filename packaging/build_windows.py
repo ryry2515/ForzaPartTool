@@ -32,12 +32,12 @@ def main():
     if dist.exists():
         raise SystemExit(f"Output already exists: {dist}. Choose a new --out folder.")
     sep = ";" if sys.platform == "win32" else ":"
-    args = [str(ED / "server.py"), "--name", "FH1 Carbin Editor", "--onedir", "--windowed", "--noconfirm", "--clean",
+    args = [str(ED / "server.py"), "--name", "FH1 Carbin Editor", "--onedir", "--windowed", "--noconfirm", "--clean", "--icon", str(ROOT / "packaging" / "assets" / "icon.ico"),
             "--distpath", str(dist), "--workpath", str(work), "--specpath", str(work), "--paths", str(TK),
             "--exclude-module", "matplotlib", "--exclude-module", "scipy", "--exclude-module", "pytest", "--exclude-module", "PIL"]
     for m in MODULES:
         args += ["--hidden-import", m]
-    for f in ("index.html", "app.js", "library_actions.mjs", "viewer_materials.mjs", "part_tools.mjs", "part_gizmo.mjs", "editor_workflow.js", "startup_diagnostics.js", "style.css"):
+    for f in ("index.html", "app.js", "library_actions.mjs", "viewer_materials.mjs", "part_tools.mjs", "part_gizmo.mjs", "editor_workflow.js", "startup_diagnostics.js", "style.css", "logo.png"):
         args += ["--add-data", f"{ED / f}{sep}."]
     args += ["--add-data", f"{ED / 'vendor'}{sep}vendor"]
     pi.run(args)

@@ -1,6 +1,10 @@
-FH1 Carbin Editor v2 - test build 15
+FH1 Carbin Editor v2 - test build 16
 
-What is new in build 15:
+What is new in build 16:
+- New logo: the program icon, the mark in the header and the page icon.
+- A harmless browser notice ("ResizeObserver loop...") is no longer shown as an error.
+
+Build 15:
 - Forza Horizon 6 car import is not part of this build (it is not finished and will come as a later update).
 Build 10 (a bug sweep: every base-game and DLC car file was opened, rebuilt and checked, and the edit operations were fuzzed on ~300 cars):
 - Dash and gauges: the instrument dials are lit with their numbers (speedometer, rev counter, fuel, warning icons), the centre display is a dark screen, and the steering wheel's airbag label is no longer a red lens.

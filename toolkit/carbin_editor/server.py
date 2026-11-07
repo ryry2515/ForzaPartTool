@@ -1106,6 +1106,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, p.read_bytes(), "text/javascript; charset=utf-8" if p.suffix == ".js" else "text/plain; charset=utf-8")
                 if u.path in ("/app.js", "/editor_workflow.js", "/startup_diagnostics.js", "/library_actions.mjs", "/viewer_materials.mjs", "/part_tools.mjs", "/part_gizmo.mjs", "/style.css"):
                     return self._send(200, (HERE / u.path[1:]).read_bytes(), "text/javascript; charset=utf-8" if u.path.endswith((".js", ".mjs")) else "text/css")
+                if u.path == '/logo.png':
+                    return self._send(200, (HERE / 'logo.png').read_bytes(), 'image/png')
                 if u.path == "/api/summary":
                     need_loaded()
                     return self._json(S.info())
