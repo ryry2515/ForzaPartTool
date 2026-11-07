@@ -76,6 +76,8 @@ python toolkit/carbin_editor/server.py --game "<game folder>" --dlc "<...\4D5309
 python packaging/build_windows.py --version 2.0.0                # the Windows program, in build/
 ```
 
+To change the real cars you need a writable copy of the game, because a disc image is read-only. `python toolkit/extract_game.py "<game folder>" "<empty output folder>"` writes one (about 7 GB; it skips files already there, so it can be repeated after an interruption). Use that folder as the game folder in *Settings*, then *Apply to existing car*.
+
 Python 3.10+. The libraries need only the standard library and `numpy`; the desktop window needs `pywebview`. three.js is bundled, so the editor works offline. More: `toolkit/carbin_editor/README.md` (editor) and `toolkit/README.md` (libraries and command-line tools).
 
 ## Tests
