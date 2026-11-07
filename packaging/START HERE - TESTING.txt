@@ -1,6 +1,9 @@
-FH1 Carbin Editor v2 - test build 16
+ForzaPartTool - test build 17
 
-What is new in build 16:
+What is new in build 17:
+- The program is now called ForzaPartTool (ForzaPartTool.exe, ForzaPartTool-<version>-windows.zip). Your settings are kept: the settings folder keeps its old name. The logo is left for you: see packaging/assets/README.md.
+
+Build 16:
 - New logo: the program icon, the mark in the header and the page icon.
 - A harmless browser notice ("ResizeObserver loop...") is no longer shown as an error.
 
@@ -48,7 +51,7 @@ Build 5:
 - Load times are written to  %APPDATA%\FH1CarbinEditor\load-times.log  (on your computer only).
   If loading still feels slow, send me that file and say which step was slow.
 
-Extract the whole ZIP, then run FH1 Carbin Editor.exe.
+Extract the whole ZIP, then run ForzaPartTool.exe.
 Windows WebView2 Runtime is required. Python and an external browser are not needed.
 
 1. In Settings, select your own FH1 game and DLC folder. Save paths & load cars.

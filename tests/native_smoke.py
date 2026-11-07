@@ -20,7 +20,7 @@ httpd = server.ThreadingHTTPServer(('127.0.0.1', 0), server.Handler)
 threading.Thread(target=httpd.serve_forever, daemon=True).start()
 url = f'http://127.0.0.1:{httpd.server_port}/?token={server.TOKEN}'
 bridge = DesktopDialogs()
-window = webview.create_window('FH1 Carbin Editor — native smoke test', url, width=1500, height=950, js_api=bridge)
+window = webview.create_window('ForzaPartTool — native smoke test', url, width=1500, height=950, js_api=bridge)
 bridge._window = window
 
 

@@ -1,6 +1,4 @@
-<p align="center"><img src="docs/images/logo.png" width="140" alt="FH1 Carbin Editor logo"></p>
-
-<h1 align="center">FH1 Carbin Editor</h1>
+<h1 align="center">ForzaPartTool</h1>
 
 <p align="center">A Windows desktop app for editing the cars of <b>Forza Horizon 1</b> (Xbox 360, on Xenia or a modded console).<br>
 3D model viewer, part editing, custom models and DLC export, plus Python libraries for the game's file formats.</p>
@@ -13,7 +11,7 @@
 
 ## Screenshots
 
-![The editor with a car open: part list, 3D view with wheels at the corners, and the Part tab](docs/images/editor.jpg)
+![ForzaPartTool with a car open: part list, 3D view with wheels at the corners, and the Part tab](docs/images/editor.jpg)
 *The editor: every part with its LODs on the left, the car in 3D (wheels drawn at the corners), tools on the right.*
 
 ![The sharp interior of the cockpit model, with lit dials](docs/images/cockpit.jpg)
@@ -48,7 +46,7 @@
 | Apply to existing car | Writes into a writable game or DLC folder (a `.bak` is made once) |
 | Export as a new DLC car | A new car with its own ID and database rows, as a Xenia folder and/or console package, using your edited files; the output folder is remembered |
 
-Also: a loading bar while cars load, **Unload car**, and remembered game and DLC folders. Saved settings live in `%APPDATA%\FH1CarbinEditor` and never leave your computer.
+Also: a loading bar while cars load, **Unload car**, and remembered game and DLC folders. Saved settings live in `%APPDATA%\FH1CarbinEditor` (the folder keeps its first name so nothing is lost on upgrade) and never leave your computer.
 
 ## File formats
 
@@ -67,8 +65,8 @@ Also: a loading bar while cars load, **Unload car**, and remembered game and DLC
 
 Requirements: Windows 10/11 and the Microsoft Edge **WebView2 Runtime** (already on current Windows 11; the app tells you if it is missing). No Python needed.
 
-1. Download `FH1-Carbin-Editor-<version>-windows.zip` from [Releases](../../releases) and extract it anywhere.
-2. Run `FH1 Carbin Editor.exe`. The editor opens in its own window; it does not use your browser.
+1. Download `ForzaPartTool-<version>-windows.zip` from [Releases](../../releases) and extract it anywhere.
+2. Run `ForzaPartTool.exe`. The editor opens in its own window; it does not use your browser.
 3. **Settings:** choose your FH1 game (folder, `.iso` or GoD container) and, for Xenia, your DLC folder (`...\4D5309C9\00000002`). Press *Save paths & load cars*.
 4. **Cars:** right-click a car → *Import*, then edit. The program is built from this source with `packaging/build_windows.py`; the release page lists the SHA-256 of the zip.
 

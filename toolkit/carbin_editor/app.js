@@ -1493,4 +1493,6 @@ async function init() {
   else if (!s.open) setTab('cars');
 }
 init().catch(e => status(e.message, true));
+// an optional logo: if toolkit/carbin_editor/logo.png exists it is shown in front of the name in the header
+fetch('/logo.png').then(r => { if (!r.ok) return; const img = el('img', { src: '/logo.png', alt: '', width: 22, height: 22, style: 'vertical-align:-5px;margin-right:6px;border-radius:5px' }); $('#brand')?.before(img); }).catch(() => {});
 if (window.__editor) window.__editor.reopen = async () => { st.sum = await api('/api/summary'); resetView(); };   // testing aid, see #debug above

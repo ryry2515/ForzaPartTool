@@ -37,7 +37,7 @@ def run_desktop(server, url: str, storage: Path):
     webview.settings['ALLOW_DOWNLOADS'] = True
     webview.settings['OPEN_EXTERNAL_LINKS_IN_BROWSER'] = False
     bridge = DesktopDialogs()
-    bridge._window = webview.create_window('FH1 Carbin Editor v2 — test build 16', url, js_api=bridge,
+    bridge._window = webview.create_window('ForzaPartTool — test build 17', url, js_api=bridge,
                                           width=1500, height=950, min_size=(1100, 700),
                                           background_color='#101215', text_select=True)
     thread = threading.Thread(target=server.serve_forever, daemon=True, name='FH1 editor API')

@@ -1,4 +1,4 @@
-# FH1 Carbin Editor
+# ForzaPartTool (carbin editor)
 
 ## 1.2.0 preview: coordinates and merges
 

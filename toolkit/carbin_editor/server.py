@@ -825,7 +825,7 @@ def save_settings(config=None) -> None:
 
 def default_out_dir() -> Path:
     """Where exported packages go by default: next to where you ran the script, or (packaged program) in Documents."""
-    return Path.home() / "Documents" / "FH1 Carbin Editor" / "new_cars" if FROZEN else Path.cwd() / "new_cars"
+    return Path.home() / "Documents" / "ForzaPartTool" / "new_cars" if FROZEN else Path.cwd() / "new_cars"
 
 
 def set_library(game: str, dlc: list):
@@ -1107,7 +1107,7 @@ class Handler(BaseHTTPRequestHandler):
                 if u.path in ("/app.js", "/editor_workflow.js", "/startup_diagnostics.js", "/library_actions.mjs", "/viewer_materials.mjs", "/part_tools.mjs", "/part_gizmo.mjs", "/style.css"):
                     return self._send(200, (HERE / u.path[1:]).read_bytes(), "text/javascript; charset=utf-8" if u.path.endswith((".js", ".mjs")) else "text/css")
                 if u.path == '/logo.png':
-                    return self._send(200, (HERE / 'logo.png').read_bytes(), 'image/png')
+                    return self._send(200, (HERE / 'logo.png').read_bytes(), 'image/png') if (HERE / 'logo.png').is_file() else self._send(404, b'no logo', 'text/plain')
                 if u.path == "/api/summary":
                     need_loaded()
                     return self._json(S.info())
@@ -1394,7 +1394,7 @@ if __name__ == "__main__":
             log = SETTINGS.parent / "startup-error.log"
             log.parent.mkdir(parents=True, exist_ok=True)
             log.write_text(message, encoding="utf-8")
-            ctypes.windll.user32.MessageBoxW(None, f"The editor could not start.\n\n{message.splitlines()[-1]}\n\nDetails: {log}", "FH1 Carbin Editor", 0x10)
+            ctypes.windll.user32.MessageBoxW(None, f"The editor could not start.\n\n{message.splitlines()[-1]}\n\nDetails: {log}", "ForzaPartTool", 0x10)
         else:
             traceback.print_exc()
         raise

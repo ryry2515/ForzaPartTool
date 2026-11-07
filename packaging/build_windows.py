@@ -1,9 +1,9 @@
-"""Build the Windows program: a folder with "FH1 Carbin Editor.exe" that runs without Python installed.
+"""Build the Windows program: a folder with "ForzaPartTool.exe" that runs without Python installed.
 
     python -m venv env && env\Scripts\pip install pyinstaller numpy
     env\Scripts\python packaging\build_windows.py [--version 1.0.0] [--out build]
 
-Result: <out>/FH1-Carbin-Editor-<version>-windows.zip (extract it anywhere, double-click "FH1 Carbin Editor.exe").
+Result: <out>/ForzaPartTool-<version>-windows.zip (extract it anywhere, double-click "ForzaPartTool.exe").
 The program is the same server.py as `python toolkit/carbin_editor/server.py`, with its files bundled (including three.js, so it needs no internet).
 """
 import argparse
@@ -32,16 +32,21 @@ def main():
     if dist.exists():
         raise SystemExit(f"Output already exists: {dist}. Choose a new --out folder.")
     sep = ";" if sys.platform == "win32" else ":"
-    args = [str(ED / "server.py"), "--name", "FH1 Carbin Editor", "--onedir", "--windowed", "--noconfirm", "--clean", "--icon", str(ROOT / "packaging" / "assets" / "icon.ico"),
+    args = [str(ED / "server.py"), "--name", "ForzaPartTool", "--onedir", "--windowed", "--noconfirm", "--clean",
             "--distpath", str(dist), "--workpath", str(work), "--specpath", str(work), "--paths", str(TK),
             "--exclude-module", "matplotlib", "--exclude-module", "scipy", "--exclude-module", "pytest", "--exclude-module", "PIL"]
+    icon = ROOT / "packaging" / "assets" / "icon.ico"                       # optional: put your own icon here and the exe uses it
+    if icon.is_file():
+        args += ["--icon", str(icon)]
     for m in MODULES:
         args += ["--hidden-import", m]
-    for f in ("index.html", "app.js", "library_actions.mjs", "viewer_materials.mjs", "part_tools.mjs", "part_gizmo.mjs", "editor_workflow.js", "startup_diagnostics.js", "style.css", "logo.png"):
+    for f in ("index.html", "app.js", "library_actions.mjs", "viewer_materials.mjs", "part_tools.mjs", "part_gizmo.mjs", "editor_workflow.js", "startup_diagnostics.js", "style.css"):
         args += ["--add-data", f"{ED / f}{sep}."]
     args += ["--add-data", f"{ED / 'vendor'}{sep}vendor"]
+    if (ED / "logo.png").is_file():                                          # optional logo shown in the header
+        args += ["--add-data", f"{ED / 'logo.png'}{sep}."]
     pi.run(args)
-    app = dist / "FH1 Carbin Editor"
+    app = dist / "ForzaPartTool"
     (app / "README.txt").write_text(README.replace("{version}", a.version), encoding="utf-8")
     for filename in ('START HERE - TESTING.txt', 'BUG REPORT TEMPLATE.txt'):
         source = ROOT / 'packaging' / filename
@@ -61,21 +66,21 @@ def main():
     python_license = Path(sys.base_prefix) / 'LICENSE.txt'
     if python_license.is_file():
         shutil.copyfile(python_license, licenses / 'Python-LICENSE.txt')
-    zp = out / f"FH1-Carbin-Editor-{a.version}-windows.zip"
+    zp = out / f"ForzaPartTool-{a.version}-windows.zip"
     zp.unlink(missing_ok=True)
     with zipfile.ZipFile(zp, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
         for p in sorted(app.rglob("*")):
             if p.is_file():
-                z.write(p, Path("FH1 Carbin Editor") / p.relative_to(app))
+                z.write(p, Path("ForzaPartTool") / p.relative_to(app))
     h = hashlib.sha256(zp.read_bytes()).hexdigest()
     (out / (zp.name + ".sha256")).write_text(f"{h}  {zp.name}\n")
     print(f"\n{zp}  {zp.stat().st_size / 2**20:.1f} MB\nSHA-256 {h}")
 
 
-README = """FH1 Carbin Editor {version}
+README = """ForzaPartTool {version}
 ===========================
 
-Double-click FH1 Carbin Editor.exe. The editor opens in its own desktop window.
+Double-click ForzaPartTool.exe. The editor opens in its own desktop window.
 No Python installation or external browser is needed. Windows WebView2 Runtime is required.
 
 1. If no valid game path is saved, Settings opens automatically.
