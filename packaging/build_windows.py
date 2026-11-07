@@ -134,7 +134,7 @@ its cars remain in your save. Close Xenia before replacing installed content.
 A base game's original file wins over the same path in DLC, which is why DLC export
 creates a separately named car. In-game compatibility must be checked in Xenia/hardware.
 
-Source: https://github.com/ryry2515/fh1-modding-toolkit
+Source: https://github.com/ryry2515/ForzaPartTool
 Not affiliated with Microsoft, Turn 10 or Playground Games. MIT license.
 """
 
