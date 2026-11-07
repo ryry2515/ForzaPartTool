@@ -53,7 +53,7 @@ Nothing is written while Xenia is running (the editor checks). "Download .carbin
 ## Adding your own model
 
 1. Open a car file, click the part you want to add to (for example `body`).
-2. Drop an FBX / GLB / OBJ file on the page (or **Add model** tab, **Choose a model file**). It appears in orange with a move / rotate / scale gizmo (buttons, or keys W / E / R).
+2. Drop an FBX / GLB / OBJ file on the page (or **Add model** tab, **Choose a model file**). It appears in orange with a move / rotate / scale gizmo (buttons, or keys W / E / R). The gizmo snaps to 1 cm, 1 degree and 1 % (so 90 degrees is easy to hit); hold **Alt** to turn snapping off while you drag, and let go to get it back. **Scale all sides together** (a checkbox, on by default) makes any scale handle resize the whole part; hold **Shift** to do the opposite for one drag.
 3. Drag it into place. Number fields give exact position, rotation and scale; **Set size** scales the longest side to metres; **Turn around** and **Z-up to Y-up** fix the orientation. The car is about 4.5 m long and its front points to -z (yellow arrow). Most FBX files are in centimetres: the editor guesses and scales by 0.01.
 4. Pick the **part** it belongs to, **add onto the part** (keeps everything the part has) or **replace** its geometry, which **LODs** get it, and a car **material** for each material in your model (`body`, `chrome`, `black`, glass names...).
 5. **Add to car.** It is added to the part and to the game's draw lists for the LODs you chose. Do the same in the `_lod0` and `_cockpit` files if the model should show in photo mode and the cockpit view.

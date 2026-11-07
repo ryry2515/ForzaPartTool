@@ -23,7 +23,7 @@ MODULES = ["carbin_geom", "carbin_library", "atlas_paint", "clone_car", "dlc_bui
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--version", default="2.0.0-test.4")
+    ap.add_argument("--version", default="2.0.0")
     ap.add_argument("--out", default=str(ROOT / "build"))
     a = ap.parse_args()
     import PyInstaller.__main__ as pi
@@ -40,7 +40,7 @@ def main():
         args += ["--icon", str(icon)]
     for m in MODULES:
         args += ["--hidden-import", m]
-    for f in ("index.html", "app.js", "library_actions.mjs", "viewer_materials.mjs", "part_tools.mjs", "part_gizmo.mjs", "editor_workflow.js", "startup_diagnostics.js", "style.css"):
+    for f in ("index.html", "app.js", "library_actions.mjs", "viewer_materials.mjs", "part_tools.mjs", "part_gizmo.mjs", "gizmo_snap.mjs", "editor_workflow.js", "startup_diagnostics.js", "style.css"):
         args += ["--add-data", f"{ED / f}{sep}."]
     args += ["--add-data", f"{ED / 'vendor'}{sep}vendor"]
     if (ED / "logo.png").is_file():                                          # optional logo shown in the header

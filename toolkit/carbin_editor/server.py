@@ -1105,7 +1105,7 @@ class Handler(BaseHTTPRequestHandler):
                     if (HERE / "vendor").resolve() not in p.parents or not p.is_file() or p.suffix not in (".js", ".txt", ""):
                         return self._send(404, b"not found", "text/plain")
                     return self._send(200, p.read_bytes(), "text/javascript; charset=utf-8" if p.suffix == ".js" else "text/plain; charset=utf-8")
-                if u.path in ("/app.js", "/editor_workflow.js", "/startup_diagnostics.js", "/library_actions.mjs", "/viewer_materials.mjs", "/part_tools.mjs", "/part_gizmo.mjs", "/style.css"):
+                if u.path in ("/app.js", "/editor_workflow.js", "/startup_diagnostics.js", "/library_actions.mjs", "/viewer_materials.mjs", "/part_tools.mjs", "/part_gizmo.mjs", "/gizmo_snap.mjs", "/style.css"):
                     return self._send(200, (HERE / u.path[1:]).read_bytes(), "text/javascript; charset=utf-8" if u.path.endswith((".js", ".mjs")) else "text/css")
                 if u.path == '/logo.png':
                     return self._send(200, (HERE / 'logo.png').read_bytes(), 'image/png') if (HERE / 'logo.png').is_file() else self._send(404, b'no logo', 'text/plain')

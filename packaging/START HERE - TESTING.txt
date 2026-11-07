@@ -1,5 +1,13 @@
-ForzaPartTool - test build 21
+ForzaPartTool 2.0.0 (final release)
 
+What is new in 2.0.0:
+- The move, rotate and scale gizmo now snaps: 1 cm for moving, 1 degree for rotating (so 90 degrees is easy to hit) and 1 % for scaling. Snapping is relative to where you grabbed the gizmo, so a part does not jump when you start a drag.
+- Hold Alt to turn snapping off while you drag. Let go and it comes back. The toolbar shows "snap paused (Alt)" while Alt is held, and the Snap checkbox turns it off for good.
+- New checkbox "Scale all sides together" (on by default): any scale handle resizes the whole part, so you do not have to resize each side. Hold Shift to do the opposite for one drag. Both settings are remembered.
+- toolkit/extract_game.py writes a normal, writable copy of your game from a Games-on-Demand image (about 7 GB), which "Apply to existing car" needs.
+- From here on the program is a final release, not a test build.
+
+Earlier test builds:
 What is new in build 21:
 - EXPERIMENT: Custom models can read a part from a modern Forza game (a .modelbin file, for example a drag chute). Drop it on the page like any other model. Only the sharpest level of detail is read, textures are not (it uses the car's own materials), and it was tried on a few files only. See docs/modelbin-experiment.md.
 - The Custom models text now says which file types work.

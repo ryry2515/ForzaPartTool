@@ -8,6 +8,7 @@ import { createWorkflow } from './editor_workflow.js';
 import { previewMaterial } from './viewer_materials.mjs';
 import { createPartTools } from './part_tools.mjs';
 import { createPartGizmo } from './part_gizmo.mjs';
+import { SNAP, snapPosition, adjustScale, snapOn, uniformOn } from './gizmo_snap.mjs';
 
 const $ = (s, r = document) => r.querySelector(s);
 const el = (tag, attrs = {}, ...kids) => {
@@ -82,6 +83,47 @@ controls.enableDamping = true;
 const tc = new TransformControls(camera, canvas);
 let gizmoGesture = false;
 tc.addEventListener('dragging-changed', e => { controls.enabled = !e.value; if (e.value) gizmoGesture = true; });
+// Snapping (rules in gizmo_snap.mjs): move 1 cm, rotate 1 degree, scale 1 %, all relative to where the drag started.
+// Hold Alt to turn it off for as long as it is held; let go and it is back. Scale-all-sides is a checkbox; Shift flips it while held.
+const heldKeys = {alt: false, shift: false};
+const flag = (key, fallback) => { try { const v = localStorage.getItem(key); return v === null ? fallback : v === '1'; } catch { return fallback; } };
+const saveFlag = (key, on) => { try { localStorage.setItem(key, on ? '1' : '0'); } catch { /* private window: keep the setting for this session only */ } };
+$('#snapOn').checked = flag('fh1.gizmoSnap', true);
+$('#uniformScale').checked = flag('fh1.gizmoUniform', true);
+const snapActive = () => snapOn({enabled: $('#snapOn').checked, altHeld: heldKeys.alt});
+function applySnapState() {
+  tc.setRotationSnap(snapActive() ? SNAP.rotation : null);
+  $('#snapHint').textContent = !$('#snapOn').checked ? 'snap off' : heldKeys.alt ? 'snap paused (Alt)' : 'Alt = no snap';
+}
+function syncHeldKeys(e) {
+  if (heldKeys.alt === e.altKey && heldKeys.shift === e.shiftKey) return;
+  heldKeys.alt = e.altKey; heldKeys.shift = e.shiftKey; applySnapState();
+}
+addEventListener('keydown', e => {
+  if (e.key === 'Alt') e.preventDefault();                       // a bare Alt press must not move focus to the window menu
+  if (e.key === 'Alt' || e.key === 'Shift') syncHeldKeys(e);
+}, true);
+addEventListener('keyup', e => {
+  if (e.key === 'Alt') e.preventDefault();
+  if (e.key === 'Alt' || e.key === 'Shift') syncHeldKeys(e);
+}, true);
+for (const type of ['pointerdown', 'pointermove']) addEventListener(type, syncHeldKeys, true);   // catches a key released while the window was not focused
+addEventListener('blur', () => { heldKeys.alt = heldKeys.shift = false; applySnapState(); });
+$('#snapOn').addEventListener('change', () => { saveFlag('fh1.gizmoSnap', $('#snapOn').checked); applySnapState(); });
+$('#uniformScale').addEventListener('change', () => saveFlag('fh1.gizmoUniform', $('#uniformScale').checked));
+applySnapState();
+let snapStart = null;
+tc.addEventListener('mouseDown', () => { const o = tc.object; snapStart = o ? {pos: o.position.toArray(), scale: o.scale.toArray()} : null; });
+tc.addEventListener('mouseUp', () => { snapStart = null; });
+tc.addEventListener('objectChange', () => {          // registered before the part gizmo's own listener, so it sees the snapped result
+  const o = tc.object;
+  if (!o || !snapStart) return;
+  if (tc.mode === 'translate') { if (snapActive()) o.position.fromArray(snapPosition(o.position.toArray(), snapStart.pos)); }
+  else if (tc.mode === 'scale') {
+    o.scale.fromArray(adjustScale(snapStart.scale, o.scale.toArray(),
+      {snap: snapActive(), uniform: uniformOn({enabled: $('#uniformScale').checked, shiftHeld: heldKeys.shift})}));
+  }
+});
 tc.addEventListener('objectChange', () => { if (place.group && tc.object === place.group) syncPlaceFields(); });
 scene.add(tc);
 scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 0.9));
@@ -92,7 +134,7 @@ scene.add(new THREE.AxesHelper(0.6));
 const front = new THREE.ArrowHelper(new THREE.Vector3(0, 0, -1), new THREE.Vector3(0, 0.02, -2.6), 1.0, 0xffcc00, 0.25, 0.15); scene.add(front);
 const world = new THREE.Group(); scene.add(world);
 // Testing aid (not shown anywhere): opening the page with #debug lets a test script place the camera exactly.
-if (location.hash === '#debug') window.__editor = { camera, controls, scene, get st() { return st; }, wake: () => wake(3000) };
+if (location.hash === '#debug') window.__editor = { camera, controls, scene, tc, canvas, get st() { return st; }, wake: () => wake(3000) };
 const overlay = new THREE.Group(); scene.add(overlay);
 let selBox = null;
 
