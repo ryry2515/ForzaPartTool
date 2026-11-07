@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parent.parent
 TK = ROOT / "toolkit"
 ED = TK / "carbin_editor"
 MODULES = ["carbin_geom", "carbin_library", "atlas_paint", "clone_car", "dlc_builder", "fh1_sources", "lsb2", "physdef", "gr2", "gr2_curves",
-           "gr2_skeleton", "xds", "xlzx", "fh1_carbin", "stfs", "fm4_carbin", "carbin_parts", "part_actions", "editor_desktop", "webview"]
+           "gr2_skeleton", "xds", "xlzx", "fh1_carbin", "stfs", "fm4_carbin", "carbin_parts", "modelbin", "part_actions", "editor_desktop", "webview"]
 
 
 def main():

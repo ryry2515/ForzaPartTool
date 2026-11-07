@@ -1,6 +1,10 @@
-ForzaPartTool - test build 20
+ForzaPartTool - test build 21
 
-What is new in build 20:
+What is new in build 21:
+- EXPERIMENT: Custom models can read a part from a modern Forza game (a .modelbin file, for example a drag chute). Drop it on the page like any other model. Only the sharpest level of detail is read, textures are not (it uses the car's own materials), and it was tried on a few files only. See docs/modelbin-experiment.md.
+- The Custom models text now says which file types work.
+
+Build 20:
 - The sharp-interior preview no longer paints the dial faces onto the rear-view mirror (seen on the 2006 Focus ST): the mirror is now plain dark glass and the gauges stay in the instrument cluster.
 
 Build 19:

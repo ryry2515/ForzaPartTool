@@ -474,7 +474,7 @@ function renderPart() {
     el('div', { class: 'field' },
       el('button', { onclick: () => exportObj([s.index]) }, 'Export this part'),
       el('button', { onclick: () => { st.importTarget = s.index; $('#objIn').click(); } }, 'Replace its geometry from OBJ...')),
-    el('div', { class: 'field' }, el('button', { class: 'primary', onclick: () => { st.modelTarget = s.index; $('#modelIn').click(); } }, 'Add a model to this part (FBX, GLB, OBJ)...')),
+    el('div', { class: 'field' }, el('button', { class: 'primary', onclick: () => { st.modelTarget = s.index; $('#modelIn').click(); } }, 'Add a model to this part (FBX, GLB, OBJ, .modelbin)...')),
     el('div', { id: 'objDialog' }));
   renderObjDialog();
   updateGizmoUI();
@@ -615,7 +615,13 @@ async function loadModelFile(file) {
     else if (ext === 'glb') root = (await new GLTFLoader().parseAsync(await file.arrayBuffer(), '')).scene;
     else if (ext === 'gltf') root = (await new GLTFLoader().parseAsync(await file.text(), '')).scene;
     else if (ext === 'obj') root = new OBJLoader().parse(await file.text());
-    else throw new Error('unsupported file type .' + ext + ' (use FBX, GLB, glTF or OBJ)');
+    else if (ext === 'modelbin') {                       // experimental: a modern Forza model; the server converts it to OBJ in FH1 coordinates (front = -z)
+      const r = await fetch('/api/modelbin/obj?lod=0', { method: 'POST', body: await file.arrayBuffer() });
+      if (!r.ok) { let m = 'conversion failed'; try { m = (await r.json()).error || m; } catch (e) { /* not JSON */ } throw new Error(m); }
+      root = new OBJLoader().parse(await r.text());
+      status(`${file.name}: converted from a modern Forza .modelbin (experimental), sharpest LOD only`);
+    }
+    else throw new Error('unsupported file type .' + ext + ' (use FBX, GLB, glTF, OBJ or a modern Forza .modelbin)');
   } catch (e) { status('could not read the model: ' + e.message, true); return; }
   startPlacement(root, file.name, ext);
 }
@@ -701,7 +707,7 @@ function renderModel() {
   if (!st.sum) { box.append(el('p', { class: 'muted' }, 'Open a .carbin first.')); return; }
   if (!place.group) {
     box.append(el('h3', {}, 'Add a model to the car'),
-      el('p', {}, 'Drop an FBX, GLB / glTF or OBJ file anywhere on this page (or choose one). It appears in orange; drag it into place with the gizmo, then add it to a part. Your model is never sent anywhere except this program on your computer.'),
+      el('p', {}, 'Drop an FBX, GLB / glTF or OBJ file anywhere on this page (or choose one). A part from a modern Forza game (a .modelbin file) also works, as an experiment: only its sharpest LOD is read and its textures are not. It appears in orange; drag it into place with the gizmo, then add it to a part. Your model is never sent anywhere except this program on your computer.'),
       el('div', { class: 'field' }, el('button', { class: 'primary', onclick: () => $('#modelIn').click() }, 'Choose a model file...')),
       el('p', { class: 'muted' }, 'Tips: the car is about 4.5 m long, front toward -z (yellow arrow). Most FBX files are in centimetres (the editor guesses and scales by 0.01). Give each material a name from the car (body, chrome, black, glass...): see the table that appears.'));
     return;
@@ -1274,7 +1280,7 @@ $('#fileIn').addEventListener('change', async e => {
 addEventListener('dragover', e => e.preventDefault());
 addEventListener('drop', async e => {
   e.preventDefault(); const f = e.dataTransfer.files[0]; if (!f) return;
-  if (/\.(fbx|glb|gltf|obj)$/i.test(f.name)) { if (!st.sum) { status('open a .carbin first, then drop the model', true); return; } await loadModelFile(f); return; }
+  if (/\.(fbx|glb|gltf|obj|modelbin)$/i.test(f.name)) { if (!st.sum) { status('open a .carbin first, then drop the model', true); return; } await loadModelFile(f); return; }
   try { st.sum = await api('/api/open', { method: 'POST', body: await f.arrayBuffer(), headers: { 'X-Name': f.name } }); resetView(); } catch (err) { status('could not open: ' + err.message, true); }
 });
 $('#btnUndo').addEventListener('click', async () => { if (partTools.undoPlacement()) return; st.sum = await post('/api/undo', {}); afterChange('all'); });

@@ -46,6 +46,7 @@ import xds  # noqa: E402
 import xlzx  # noqa: E402
 import fh1_carbin as fc  # noqa: E402
 import carbin_parts
+import modelbin
 from carbin_parts import PartClipboard
 import part_actions
 
@@ -1209,6 +1210,10 @@ class Handler(BaseHTTPRequestHandler):
                     _cockpit_cache.clear()
                     _free_cache.clear()
                     return self._json({'open': False})
+                if u.path == '/api/modelbin/obj':
+                    # experimental: a modern Forza .modelbin (Grub bundle) becomes OBJ text in FH1 coordinates; the page feeds it to the normal model importer
+                    lod = int(parse_qs(u.query).get('lod', ['0'])[0])
+                    return self._send(200, modelbin.to_obj(body, lod).encode(), 'text/plain; charset=utf-8')
                 if u.path == '/api/parts/inspect':
                     car = inspect_library_model(json.loads(body))
                     return self._json(cg.summary(car))

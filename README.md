@@ -28,7 +28,7 @@
 |---|---|
 | Parts | Move / rotate / scale with a gizmo or numbers, mirror, rename, merge into another part, copy a part from another car, delete or retarget sub-meshes, hide a part from the game; every step undoable |
 | Both models | Edits can be applied to the driving model and the close-up/photo model together |
-| Custom models | Import FBX, GLB/glTF or OBJ, place it with the gizmo, and add it as its own part (stays selectable and movable) or merge it into an existing part; automatic LODs; optional texture painted into the car's atlas |
+| Custom models | Import FBX, GLB/glTF or OBJ (and, as an experiment, a part from a modern Forza game: a `.modelbin`, sharpest LOD, no textures), place it with the gizmo, and add it as its own part (stays selectable and movable) or merge it into an existing part; automatic LODs; optional texture painted into the car's atlas |
 | Lights and exhausts | Light records and exhaust emitters, with position and colour |
 | Physics | Collision spheres, hull and body numbers (wheelbase, track, ride height, bounding box) |
 | Other tabs | Skeleton and animations (`.gr2`), archive browser, string tables, texture viewer and replacement |
