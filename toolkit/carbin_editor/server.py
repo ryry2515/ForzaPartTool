@@ -47,6 +47,7 @@ import xlzx  # noqa: E402
 import fh1_carbin as fc  # noqa: E402
 import carbin_parts
 import modelbin
+import modelbin_writer as mbw
 from carbin_parts import PartClipboard
 import part_actions
 
@@ -1047,7 +1048,54 @@ def do_clone(a):
         out["project"] = str(proj)
     except Exception as exc:
         out["project_error"] = str(exc)
+    try:                                                    # and the edited model as OBJ + MTL, for Blender and other tools
+        stem = safe_name(a["new_media"])
+        for filename, text in model_obj_files(stem).items():
+            (root / filename).write_text(text, encoding="utf-8", newline="\n")
+        out["obj"] = str(root / f"{stem}.obj")
+    except Exception as exc:
+        out["obj_error"] = str(exc)
+    try:                                                    # and one .modelbin per part, in the layout modern Forza uses (experimental)
+        folder = root / f"{safe_name(a['new_media'])}_modelbin"
+        written, failed = model_modelbin_files()
+        folder.mkdir(parents=True, exist_ok=True)
+        for filename, raw in written.items():
+            (folder / filename).write_bytes(raw)
+        (folder / "README.txt").write_text(MODELBIN_README, encoding="utf-8", newline="\n")
+        out["modelbin"] = {"folder": str(folder), "parts": len(written), "skipped": failed}
+    except Exception as exc:
+        out["modelbin_error"] = str(exc)
     return out
+
+
+MODELBIN_README = """Model bins written by ForzaPartTool (experimental).
+
+One .modelbin per part of the open model, in the layout of Forza Horizon 6 (bundle 1.1, Modl 1.4, Mesh 1.12).
+They were checked by reading them back, not in the game.
+
+- Geometry, normals, tangents and UVs only. No textures are written.
+- Each material is a NAME the game looks up in its own library (Media\\cars\\_library\\materials). The name is a guess from the
+  FH1 material name (body -> carpaint, chrome -> chrome, glass -> glass ...). Change it in a modelbin editor if it looks wrong.
+- Coordinates are converted from FH1 (front is -z) to modern Forza (front is +z); the part keeps its place on the car.
+- Layout and packing follow ForzaTech Studio by D3FEKT (MIT): https://github.com/D3FEKT/ForzaTechStudio
+"""
+
+
+def model_modelbin_files() -> tuple[dict[str, bytes], dict[str, str]]:
+    """The open model as {part name.modelbin: bytes} (sharp LOD first, every LOD slot filled) and {part: why it was skipped}."""
+    need_loaded()
+    return mbw.modelbins_from_carbin(S.carbin)
+
+
+def model_obj_files(stem: str) -> dict[str, str]:
+    """The open model's sharpest LOD as OBJ text plus a matching MTL (one default material per material name), as {file name: text}."""
+    need_loaded()
+    lods = {sb.lod for sec in S.carbin.sections for sb in sec.subs}
+    text = cg.export_obj(S.carbin, None, {min(lods)} if lods else None, "auto", True)
+    mats = sorted({line[7:].strip() for line in text.splitlines() if line.startswith("usemtl ")})
+    mtl = "# Exported by ForzaPartTool\n" + "".join(
+        f"\nnewmtl {m}\nKa 0.000000 0.000000 0.000000\nKd 0.800000 0.800000 0.800000\nKs 0.000000 0.000000 0.000000\nillum 2\n" for m in mats)
+    return {f"{stem}.obj": f"# Exported by ForzaPartTool\nmtllib {stem}.mtl\n" + text, f"{stem}.mtl": mtl}
 
 
 PROJECT_VERSION = 1

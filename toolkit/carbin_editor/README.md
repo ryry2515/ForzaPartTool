@@ -85,7 +85,7 @@ The Open / Save tab can copy the open car into a **new car inside a DLC package*
 | carbin editor: parts, models, LOD flags | parts, sub-meshes, LODs, draw lists |
 | 3D viewer: textures, LODs, wireframe, normals, boxes, hide/isolate, OBJ export, undo | all of these |
 | move / rotate / scale parts with undo | yes |
-| import models, modelbin creator | drop FBX / GLB / OBJ and add or replace |
+| import models, modelbin creator | drop FBX / GLB / OBJ and add or replace; DLC export writes a `.modelbin` per part (experimental, no textures, not tested in the game) |
 | lights editor | light records and exhaust points |
 | swatchbin / texture viewer, import, export | Archive tab (xds preview, PNG export, replace with mips) |
 | string tables | Strings tab (read only) |

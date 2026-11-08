@@ -1041,6 +1041,9 @@ function cloneSection() {
       r.folder ? el('div', {}, el('p', {}, 'Xenia (with Xenia closed): back up your save, copy the folder'), el('p', { class: 'muted' }, r.folder), el('p', {}, 'to  ...\\4D5309C9\\00000002\\  and the file'), el('p', { class: 'muted' }, r.header), el('p', {}, 'to  ...\\4D5309C9\\Headers\\00000002\\ .')) : '',
       r.stfs ? el('div', {}, el('p', {}, 'Modded 360: the console package'), el('p', { class: 'muted' }, r.stfs), el('p', {}, 'goes on a USB stick like any content package.')) : '',
       r.project ? el('p', { class: 'muted' }, 'Project saved next to the package: ' + r.project + ' (open it in the tool to carry on editing).') : '',
+      r.obj ? el('p', { class: 'muted' }, 'Model for Blender (OBJ + MTL, sharpest LOD): ' + r.obj) : '',
+      r.modelbin ? el('p', { class: 'muted' }, 'Model bins for newer Forza games (experimental, not tested in the game, no textures): ' + r.modelbin.parts + ' parts in ' + r.modelbin.folder + (Object.keys(r.modelbin.skipped || {}).length ? ' (skipped: ' + Object.keys(r.modelbin.skipped).join(', ') + ')' : '')) : '',
+      r.modelbin_error ? el('p', { class: 'muted' }, 'Model bins were not written: ' + r.modelbin_error) : '',
       el('p', {}, 'Then buy the new car in the Autoshow. Removing the pack later needs the save restored, because a saved car would point at nothing.')) : ''];
 }
 

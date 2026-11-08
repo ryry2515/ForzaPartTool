@@ -1,4 +1,8 @@
-ForzaPartTool 2.0.2
+ForzaPartTool 2.0.3
+
+What is new in 2.0.3:
+- NEW: Exporting as a DLC car now also writes your edited model for other tools, next to the package: <car>.obj + <car>.mtl (for Blender; the sharpest level of detail) and a folder <car>_modelbin with one .modelbin per part (the layout newer Forza games use). The project file is saved there too.
+- EXPERIMENT: the .modelbin files carry geometry, normals, tangents and UVs but NO textures. Materials are names the game looks up in its own library, guessed from the FH1 material names. They were checked by reading them back and comparing with a real Horizon 6 part, not in the game. Layout follows ForzaTech Studio by D3FEKT (MIT). See docs/modelbin-experiment.md.
 
 What is new since 2.0.0 (2.0.1 and 2.0.2):
 - NEW: Save project / Open project (File tab). It saves everything you have done to the open car (the model with all its edits, staged files and painted textures, body numbers) as one .fptproj file, without writing anything into the game. Open it again later, or drag it onto the window. Exporting as a DLC car now also saves a project next to the package.
