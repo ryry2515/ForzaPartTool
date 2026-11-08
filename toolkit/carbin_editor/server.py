@@ -1022,7 +1022,73 @@ def do_clone(a):
     S.export_dirs = [folder for folder in S.export_dirs if folder != remembered] + [remembered]
     S.output_dir = remembered
     save_settings()
+    try:                                                    # exporting also saves the project, next to the package, so the work can be opened again
+        proj = root / f"{a['new_media']}.fptproj"
+        proj.write_bytes(project_bytes())
+        out["project"] = str(proj)
+    except Exception as exc:
+        out["project_error"] = str(exc)
     return out
+
+
+PROJECT_VERSION = 1
+PROJECT_LIMIT = 1 << 31                                     # most uncompressed bytes a project file may hold
+
+
+def project_bytes() -> bytes:
+    """Everything the editor holds for the open car as one .fptproj file (a zip): the open model with its unstaged edits, every staged file
+    (models, painted atlases, ...), where the car came from and the body numbers. Opening it later puts the editor back as it was."""
+    need_loaded()
+    import io
+    import zipfile
+    meta = {"app": "ForzaPartTool", "version": PROJECT_VERSION, "name": S.name, "origin": S.origin, "body_over": S.body_over,
+            "staged": sorted(S.staged)}
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("project.json", json.dumps(meta, indent=1))
+        z.writestr("open.carbin", fc.build(S.carbin))
+        for rel, raw in S.staged.items():
+            z.writestr("staged/" + rel, raw)
+    return buf.getvalue()
+
+
+def project_open(body: bytes) -> dict:
+    """Restore a project made by project_bytes(). The file is checked completely before the session is touched."""
+    import io
+    import zipfile
+    try:
+        z = zipfile.ZipFile(io.BytesIO(body))
+    except zipfile.BadZipFile:
+        raise ValueError("this is not a ForzaPartTool project file") from None
+    names = z.namelist()
+    if "project.json" not in names or "open.carbin" not in names:
+        raise ValueError("this is not a ForzaPartTool project file (project.json or open.carbin is missing)")
+    if sum(i.file_size for i in z.infolist()) > PROJECT_LIMIT:
+        raise ValueError("the project file is too large")
+    meta = json.loads(z.read("project.json"))
+    if meta.get("app") != "ForzaPartTool" or int(meta.get("version", 0)) > PROJECT_VERSION:
+        raise ValueError("this project was saved by a newer ForzaPartTool: update the tool to open it")
+    staged = {}
+    for n in names:
+        if n.startswith("staged/") and not n.endswith("/"):
+            rel = n[len("staged/"):]
+            if not rel or rel.startswith("/") or "\\" in rel or ":" in rel or ".." in rel.split("/"):
+                raise ValueError(f"the project holds an unsafe file name: {rel}")
+            staged[rel] = z.read(n)
+    open_bytes = z.read("open.carbin")
+    fc.parse(open_bytes)                                    # a model that does not parse must not replace the open one
+    origin = meta.get("origin") or None
+    S.load(open_bytes, str(meta.get("name") or "model.carbin"), None, origin)
+    S.staged.clear()
+    S.staged.update(staged)
+    S.body_over = {k: float(v) for k, v in (meta.get("body_over") or {}).items()}
+    if origin and S.lib:                                    # the file as the game has it, so "changed" and the checks compare with the real original
+        try:
+            original = S.lib.read(origin["source"], origin["archive"], origin["member"])
+            S.original, S.baseline = original, problem_keys(original)
+        except Exception:
+            pass
+    return S.info()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -1123,6 +1189,9 @@ class Handler(BaseHTTPRequestHandler):
                     lods = {int(x) for x in q["lods"].split(",")} if q.get("lods") else None
                     text = cg.export_obj(S.carbin, secs, lods, q.get("uv", "auto"), q.get("flip_v", "1") == "1")
                     return self._send(200, text.encode(), "text/plain; charset=utf-8", {"Content-Disposition": f'attachment; filename="{safe_name(Path(S.name).stem)}.obj"'})
+                if u.path == "/api/project/save":
+                    need_loaded()
+                    return self._send(200, project_bytes(), "application/octet-stream", {"Content-Disposition": f'attachment; filename="{safe_name(Path(S.name).stem)}.fptproj"'})
                 if u.path == "/api/save":
                     need_loaded()
                     probs = new_problems(S.carbin, S.baseline)
@@ -1229,6 +1298,8 @@ class Handler(BaseHTTPRequestHandler):
                 if u.path == "/api/open":
                     S.load(body, self.headers.get("X-Name", "model.carbin"))
                     return self._json(S.info())
+                if u.path == "/api/project/open":
+                    return self._json(project_open(body))
                 if u.path == "/api/open_path":
                     p = Path(json.loads(body)["path"])
                     S.load(p.read_bytes(), p.name, p)

@@ -938,6 +938,24 @@ async function refreshLibrary() {
   workflow.loadCars();                      // in the background: the car that is already open must not wait for the list of all cars
 }
 
+// ---------------------------------------------------------------------------------------------- project: save your work in the tool
+async function openProject(f) {
+  try {
+    busy.start('Opening the project…');
+    st.sum = await api('/api/project/open', { method: 'POST', body: await f.arrayBuffer() });
+    invalidateTextures(); texAtlasImg = null; st.free = null; st.cloneDef = null;
+    resetView();
+    status('project opened: ' + f.name);
+  } catch (e) { status('could not open the project: ' + e.message, true); }
+  finally { busy.end(); }
+}
+function projectSection() {
+  const pick = el('input', { type: 'file', accept: '.fptproj', style: 'display:none', onchange: async e => { const f = e.target.files[0]; if (f) await openProject(f); e.target.value = ''; } });
+  return el('div', {}, el('h3', {}, 'Project (save your work without exporting)'),
+    el('p', { class: 'muted' }, 'A project file keeps everything you have done to this car in the tool: the open model with all its edits, the staged files and painted textures, and the body numbers. It writes nothing into the game. Open it again later (or drag it onto the window) to carry on. Exporting as DLC also saves a project next to the package.'),
+    el('div', { class: 'field' }, el('button', { class: 'primary', disabled: !st.sum, onclick: () => { location.href = '/api/project/save'; } }, 'Save project'), el('button', { onclick: () => pick.click() }, 'Open project…'), pick));
+}
+
 async function saveBack() {
   try {
     const r = await post('/api/library/save', {});
@@ -1022,6 +1040,7 @@ function cloneSection() {
     r && (r.folder || r.stfs) ? el('div', {}, el('p', { class: 'ok' }, `Exported: car id ${r.car_id}, ${r.rows} rows in ${r.tables} tables, ${r.files} files; edited files: ${r.edited.join(', ')}. ${r.folder ? (r.problems.length ? 'Package problems: ' + r.problems.join('; ') : 'Package checks passed.') : 'Console package written and read back.'}`),
       r.folder ? el('div', {}, el('p', {}, 'Xenia (with Xenia closed): back up your save, copy the folder'), el('p', { class: 'muted' }, r.folder), el('p', {}, 'to  ...\\4D5309C9\\00000002\\  and the file'), el('p', { class: 'muted' }, r.header), el('p', {}, 'to  ...\\4D5309C9\\Headers\\00000002\\ .')) : '',
       r.stfs ? el('div', {}, el('p', {}, 'Modded 360: the console package'), el('p', { class: 'muted' }, r.stfs), el('p', {}, 'goes on a USB stick like any content package.')) : '',
+      r.project ? el('p', { class: 'muted' }, 'Project saved next to the package: ' + r.project + ' (open it in the tool to carry on editing).') : '',
       el('p', {}, 'Then buy the new car in the Autoshow. Removing the pack later needs the save restored, because a saved car would point at nothing.')) : ''];
 }
 
@@ -1032,7 +1051,7 @@ function renderFile() {
   const src = o && lib.sources.find(s => s.id === o.source);
   if (st.sum) {
     const probs = st.sum.problems;
-    box.append(el('h3', {}, '3. Save'),
+    box.append(projectSection(), el('h3', {}, '3. Save'),
       el('p', {}, o ? `Open: ${src ? src.label : o.source} - ${o.member}` : 'Open: a file from disk'),
       o ? el('div', { class: 'field' }, el('button', { class: 'primary', disabled: !(src && src.writable), onclick: () => saveBack(false) }, 'Apply to existing car'), el('button', {onclick: exportCarZip}, 'Export car ZIP…'),
         src && !src.writable ? el('span', { class: 'muted' }, src.why) : '') : '',
@@ -1047,7 +1066,7 @@ function renderFile() {
       el('h3', {}, 'Statistics'),
       el('p', { class: 'muted' }, `${st.sum.sections.length} parts, ${st.sum.sections.reduce((a, s) => a + s.verts, 0)} vertices, ${st.sum.lights.length} lights, ${st.sum.exhausts.length} exhausts, ${st.sum.draw_arrays} draw arrays, pool ${st.sum.pool}.`));
   } else {
-    box.append(el('h3', {}, 'Open by path'), el('div', { class: 'field' }, el('input', { id: 'openPath', placeholder: 'C:\\path\\to\\Car.carbin' }), el('button', { onclick: async () => { try { st.sum = await post('/api/open_path', { path: $('#openPath').value }); resetView(); } catch (e) { status(e.message, true); } } }, 'Open')));
+    box.append(projectSection(), el('h3', {}, 'Open by path'), el('div', { class: 'field' }, el('input', { id: 'openPath', placeholder: 'C:\\path\\to\\Car.carbin' }), el('button', { onclick: async () => { try { st.sum = await post('/api/open_path', { path: $('#openPath').value }); resetView(); } catch (e) { status(e.message, true); } } }, 'Open')));
   }
 }
 
@@ -1322,6 +1341,7 @@ $('#fileIn').addEventListener('change', async e => {
 addEventListener('dragover', e => e.preventDefault());
 addEventListener('drop', async e => {
   e.preventDefault(); const f = e.dataTransfer.files[0]; if (!f) return;
+  if (/\.fptproj$/i.test(f.name)) { await openProject(f); return; }
   if (/\.(fbx|glb|gltf|obj|modelbin)$/i.test(f.name)) { if (!st.sum) { status('open a .carbin first, then drop the model', true); return; } await loadModelFile(f); return; }
   try { st.sum = await api('/api/open', { method: 'POST', body: await f.arrayBuffer(), headers: { 'X-Name': f.name } }); resetView(); } catch (err) { status('could not open: ' + err.message, true); }
 });
