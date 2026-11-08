@@ -279,6 +279,8 @@ def _encode_groups(pieces, offset, bmax, sh, base, tpl_sub):
     vbytes, subs = [], []
     groups: dict[tuple[int, str], list[Piece]] = {}
     for p in pieces:
+        if not len(p.tris) or not len(p.pos):     # an empty piece has nothing to encode (and used.max() below would fail on it)
+            continue
         groups.setdefault((p.lod, p.material), []).append(p)
     for (lod, mat), ps in sorted(groups.items()):
         idx_all = []
@@ -424,9 +426,17 @@ def decimate(p: Piece, target_tris: int) -> Piece:
         if len(t) > target_tris:
             a = mid
         else:
-            best, b = (inv, t), mid
+            if len(t):                       # a clustering that kills every triangle (thin tubes, flat sheets, backface geometry) is not a result
+                best = (inv, t)
+            b = mid
     if best is None:
-        best = cluster(b)
+        for cell in (b, a):                  # no cell size gave 1..target triangles: take the first one that keeps any
+            inv, t = cluster(cell)
+            if len(t):
+                best = (inv, t)
+                break
+        if best is None:
+            return p                         # nothing sensible to simplify to: keep the full piece rather than an empty one
     inv, t = best
     n = int(inv.max()) + 1
     cnt = np.bincount(inv, minlength=n).astype(np.float64)[:, None]
