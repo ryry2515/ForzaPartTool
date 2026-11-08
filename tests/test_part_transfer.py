@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 
@@ -11,7 +12,8 @@ import fh1_carbin as fc
 import carbin_geom as cg
 import xlzx
 
-GAME = Path('C:/Users/ryan/Downloads/Forza Modding Development/Assets and refrences/inputs/4D5309C9/00007000/DD04A22D0F8E35E0C3EE744E2B7A1346')
+# your own FH1 game (a folder, .iso or Games-on-Demand container); the integration tests skip without it
+GAME = Path(os.environ.get('FH1_GAME', 'FH1_GAME_not_set'))
 
 
 @pytest.fixture(scope='module')

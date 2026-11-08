@@ -84,7 +84,7 @@ Python 3.10+. The libraries need only the standard library and `numpy`; the desk
 
 ```
 pip install pytest numpy
-python -m pytest tests          # needs your game folder for the integration tests (they skip without it)
+python -m pytest tests          # integration tests need your own game: set FH1_GAME (and optionally FH1_DLC) to its folder; they skip without it
 node --test tests/*.test.mjs
 ```
 

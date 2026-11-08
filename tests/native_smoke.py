@@ -1,6 +1,7 @@
 """Run a real native desktop window, exercise onboarding, and write observed UI state."""
 import importlib.util
 import json
+import os
 import sys
 import threading
 import time
@@ -51,8 +52,8 @@ def probe():
         wait_for('!!window.pywebview?.api?.choose_path')
         result['native_api'] = evaluate('Object.keys(window.pywebview.api)')
         assert sorted(result['native_api']) == ['choose_path', 'copy_text'], result['native_api']
-        game = 'C:/Users/ryan/Downloads/Forza Modding Development/Assets and refrences/inputs/4D5309C9/00007000/DD04A22D0F8E35E0C3EE744E2B7A1346'
-        dlc = 'C:/Users/ryan/Downloads/xenia_canary_windows/content/0000000000000000/4D5309C9/00000002'
+        game = os.environ['FH1_GAME']          # your own FH1 game folder, .iso or container
+        dlc = os.environ.get('FH1_DLC', '')    # optional Xenia DLC folder
         evaluate(f'document.querySelector("#cfgGame").value={json.dumps(game)}; document.querySelector("#cfgDlc").value={json.dumps(dlc)}; document.querySelector("#applySettings").click()')
         wait_for('document.querySelectorAll(".car-row").length > 176', 120)
         result['cars'] = evaluate('document.querySelectorAll(".car-row").length')

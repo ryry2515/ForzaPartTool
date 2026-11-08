@@ -1,4 +1,5 @@
 import io
+import os
 from pathlib import Path
 import zipfile
 
@@ -13,7 +14,8 @@ import xlzx
 import xds
 
 
-DLC = Path('C:/Users/ryan/Downloads/xenia_canary_windows/content/0000000000000000/4D5309C9/00000002')
+# a Xenia DLC folder (...\4D5309C9\00000002) holding an FM4-imported Focus ST; skipped without it
+DLC = Path(os.environ.get('FH1_DLC', 'FH1_DLC_not_set'))
 
 
 @pytest.mark.parametrize('lod0', [False, True])
