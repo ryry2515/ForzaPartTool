@@ -75,7 +75,7 @@ Windows may warn about an unrecognised app because the exe is not code-signed.
 pip install numpy pywebview pyinstaller
 python toolkit/selftest.py "<your 4D5309C9 game folder>"        # checks the libraries against your files first
 python toolkit/carbin_editor/server.py --game "<game folder>" --dlc "<...\4D5309C9\00000002>"    # run from source
-python packaging/build_windows.py --version 2.0.1                # the Windows program, in build/
+python packaging/build_windows.py --version 2.0.2                # the Windows program, in build/
 ```
 
 To change the real cars you need a writable copy of the game, because a disc image is read-only. `python toolkit/extract_game.py "<game folder>" "<empty output folder>"` writes one (about 7 GB; it skips files already there, so it can be repeated after an interruption). Use that folder as the game folder in *Settings*, then *Apply to existing car*.
