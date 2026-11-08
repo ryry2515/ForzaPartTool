@@ -1,4 +1,7 @@
-ForzaPartTool 2.0.3
+ForzaPartTool 2.0.4
+
+What is new in 2.0.4:
+- FIXED: "the new car's database rows collide with existing rows" (about 39 lines of "UNIQUE constraint failed: List_Upgrade...Id", "Combo_Colors.ID", ...) when exporting a DLC car whose donor is a car from an installed DLC package, seen with cars imported from Forza Horizon 2. Those packages' databases do not declare their primary keys, so the copied rows kept the donor's Id values. The game's own database now supplies the keys. Reproduced with a donor database stripped of its keys (39 problems before, 0 after) and covered by a test.
 
 What is new in 2.0.3:
 - NEW: Exporting as a DLC car now also writes your edited model for other tools, next to the package: <car>.obj + <car>.mtl (for Blender; the sharpest level of detail) and a folder <car>_modelbin with one .modelbin per part (the layout newer Forza games use). The project file is saved there too.

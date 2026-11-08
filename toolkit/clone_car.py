@@ -51,8 +51,15 @@ def _wanted(table: str) -> bool:
     return table in TABLE_NAMES or table.startswith(TABLE_PREFIXES)
 
 
-def _cols(con, t):
-    return [(c[1], c[5], (c[2] or "").upper()) for c in con.execute(f'pragma table_info("{t}")')]
+def _cols(con, t, ref=None):
+    """[(column, primary-key position, declared type)] of table `t`. A package's own database can lack the key declarations (rebuilt
+    with CREATE TABLE AS, or by a tool that does not write them); then `ref` (the game's database) supplies the keys and missing types,
+    so the surrogate `Id` of every copied row still gets a fresh value instead of repeating the donor's."""
+    cols = [(c[1], c[5], (c[2] or "").upper()) for c in con.execute(f'pragma table_info("{t}")')]
+    if ref is not None and cols and not any(pk for _, pk, _ in cols):
+        known = {c[1].lower(): (c[5], (c[2] or "").upper()) for c in ref.execute(f'pragma table_info("{t}")')}
+        cols = [(c, known[c.lower()][0] if c.lower() in known else pk, typ or (known[c.lower()][1] if c.lower() in known else typ)) for c, pk, typ in cols]
+    return cols
 
 
 def same_length_name(donor: str, taken: set[str]) -> str:
@@ -158,7 +165,7 @@ def clone_car(game: src.BaseGame, donor_media: str, new_media: str, offer: int, 
     for t in tables:
         if t in ("ContentOffers", "ContentOffersMapping"):
             continue
-        cols = _cols(sdb, t)
+        cols = _cols(sdb, t, base)
         if not cols:
             continue
         keyed = [(c, _space(t, c)) for c, pk, typ in cols if _space(t, c)]
