@@ -37,6 +37,7 @@
 
 | | |
 |---|---|
+| Save project | Saves everything you have done in the tool (the open model with its edits, staged files and painted textures, body numbers) as one `.fptproj` file without writing anything into the game; open it again later or drag it onto the window. Exporting as a DLC car also saves one next to the package |
 | Export car ZIP | A replacement car archive for an extracted game or DLC copy |
 | Apply to existing car | Writes into a writable game or DLC folder (a `.bak` is made once) |
 | Export as a new DLC car | A new car with its own ID and database rows, as a Xenia folder and/or console package, using your edited files; the output folder is remembered |
@@ -48,6 +49,7 @@ Also: a loading bar while cars load, **Unload car**, and remembered game and DLC
 | Extension | What | Read | Write |
 |---|---|---|---|
 | `.carbin` | Car models (sections, LOD vertex pools, sub-meshes, draw lists, lights, exhausts) | yes | yes |
+| `.fptproj` | A ForzaPartTool project (a zip: the open model, staged files, car origin, body numbers) | yes | yes |
 | `.xds` | Xbox 360 textures (DXT1/3/5, 8888) | yes | yes |
 | `.zip` (car archives) | Xbox LZX-compressed members | yes | yes |
 | `.gr2` | Granny skeletons and animations | yes | yes |
@@ -73,7 +75,7 @@ Windows may warn about an unrecognised app because the exe is not code-signed.
 pip install numpy pywebview pyinstaller
 python toolkit/selftest.py "<your 4D5309C9 game folder>"        # checks the libraries against your files first
 python toolkit/carbin_editor/server.py --game "<game folder>" --dlc "<...\4D5309C9\00000002>"    # run from source
-python packaging/build_windows.py --version 2.0.0                # the Windows program, in build/
+python packaging/build_windows.py --version 2.0.1                # the Windows program, in build/
 ```
 
 To change the real cars you need a writable copy of the game, because a disc image is read-only. `python toolkit/extract_game.py "<game folder>" "<empty output folder>"` writes one (about 7 GB; it skips files already there, so it can be repeated after an interruption). Use that folder as the game folder in *Settings*, then *Apply to existing car*.

@@ -23,7 +23,7 @@ MODULES = ["carbin_geom", "carbin_library", "atlas_paint", "clone_car", "dlc_bui
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--version", default="2.0.0")
+    ap.add_argument("--version", default="2.0.1")
     ap.add_argument("--out", default=str(ROOT / "build"))
     a = ap.parse_args()
     import PyInstaller.__main__ as pi
