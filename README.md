@@ -40,7 +40,7 @@
 | Save project | Saves everything you have done in the tool (the open model with its edits, staged files and painted textures, body numbers) as one `.fptproj` file without writing anything into the game; open it again later or drag it onto the window. Exporting as a DLC car also saves one next to the package |
 | Export car ZIP | A replacement car archive for an extracted game or DLC copy |
 | Apply to existing car | Writes into a writable game or DLC folder (a `.bak` is made once) |
-| Export as a new DLC car | A new car with its own ID and database rows, as a Xenia folder and/or console package, using your edited files; the output folder is remembered |
+| Export as a new DLC car | A new car with its own ID and database rows, as a Xenia folder and/or console package, using your edited files; the output folder is remembered. It also writes the project, the model as OBJ + MTL (for Blender), and an experimental folder of `.modelbin` files, one per part |
 
 Also: a loading bar while cars load, **Unload car**, and remembered game and DLC folders. Saved settings live in `%APPDATA%\FH1CarbinEditor` (the folder keeps its first name so nothing is lost on upgrade) and never leave your computer.
 
@@ -50,6 +50,8 @@ Also: a loading bar while cars load, **Unload car**, and remembered game and DLC
 |---|---|---|---|
 | `.carbin` | Car models (sections, LOD vertex pools, sub-meshes, draw lists, lights, exhausts) | yes | yes |
 | `.fptproj` | A ForzaPartTool project (a zip: the open model, staged files, car origin, body numbers) | yes | yes |
+| `.modelbin` | Models of newer Forza games (experimental: geometry only, no textures, not tested in the game) | yes (sharpest LOD) | yes (one per part, on DLC export) |
+| `.obj` + `.mtl` | Wavefront model, for Blender | yes (custom model) | yes (on DLC export) |
 | `.xds` | Xbox 360 textures (DXT1/3/5, 8888) | yes | yes |
 | `.zip` (car archives) | Xbox LZX-compressed members | yes | yes |
 | `.gr2` | Granny skeletons and animations | yes | yes |
@@ -75,7 +77,7 @@ Windows may warn about an unrecognised app because the exe is not code-signed.
 pip install numpy pywebview pyinstaller
 python toolkit/selftest.py "<your 4D5309C9 game folder>"        # checks the libraries against your files first
 python toolkit/carbin_editor/server.py --game "<game folder>" --dlc "<...\4D5309C9\00000002>"    # run from source
-python packaging/build_windows.py --version 2.0.2                # the Windows program, in build/
+python packaging/build_windows.py --version 2.0.3                # the Windows program, in build/
 ```
 
 To change the real cars you need a writable copy of the game, because a disc image is read-only. `python toolkit/extract_game.py "<game folder>" "<empty output folder>"` writes one (about 7 GB; it skips files already there, so it can be repeated after an interruption). Use that folder as the game folder in *Settings*, then *Apply to existing car*.
@@ -110,6 +112,6 @@ The editor serves itself to its window on `127.0.0.1` only, with a random per-ru
 - [three.js](https://threejs.org/) (MIT), bundled for the 3D view.
 - Granny `.gr2` handling follows the layout documented by the community (`toolkit/gr2.py`, MPL-2.0).
 - [Xenia](https://xenia.jp/) for running the game, and the Forza modding community for format knowledge.
-- Related project for newer Forza games: [ForzaTech Studio](https://github.com/D3FEKT/ForzaTechStudio) by D3FEKT (Forza Motorsport and Horizon 5 / 2023 formats).
+- [ForzaTech Studio](https://github.com/D3FEKT/ForzaTechStudio) by D3FEKT (MIT; its bundle library carries Nenkai's copyright): the `.modelbin` layout written by `toolkit/modelbin_writer.py` follows its Modelbin Creator (a Python reimplementation, no code copied).
 
 See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for licences of bundled code. Licence: MIT ([`LICENSE`](LICENSE)), except `toolkit/gr2.py` (MPL-2.0 header) and the bundled three.js files (MIT).

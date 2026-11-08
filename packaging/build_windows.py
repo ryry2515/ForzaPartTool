@@ -18,12 +18,12 @@ ROOT = Path(__file__).resolve().parent.parent
 TK = ROOT / "toolkit"
 ED = TK / "carbin_editor"
 MODULES = ["carbin_geom", "carbin_library", "atlas_paint", "clone_car", "dlc_builder", "fh1_sources", "lsb2", "physdef", "gr2", "gr2_curves",
-           "gr2_skeleton", "xds", "xlzx", "fh1_carbin", "stfs", "fm4_carbin", "carbin_parts", "modelbin", "part_actions", "editor_desktop", "webview"]
+           "gr2_skeleton", "xds", "xlzx", "fh1_carbin", "stfs", "fm4_carbin", "carbin_parts", "modelbin", "modelbin_writer", "part_actions", "editor_desktop", "webview"]
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--version", default="2.0.2")
+    ap.add_argument("--version", default="2.0.3")
     ap.add_argument("--out", default=str(ROOT / "build"))
     a = ap.parse_args()
     import PyInstaller.__main__ as pi

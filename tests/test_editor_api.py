@@ -86,6 +86,13 @@ def test_pasted_geometry_exports_and_reopens_as_dlc(editor, tmp_path):
     assert Path(result['folder']).is_dir()
     assert Path(result['header']).is_file()
     assert Path(result['stfs']).is_file()
+    # exporting also writes the model for other tools: OBJ + MTL, and a model bin per part
+    assert Path(result['obj']).is_file() and Path(result['obj']).with_suffix('.mtl').is_file()
+    assert Path(result['project']).is_file()
+    folder = Path(result['modelbin']['folder'])
+    assert 'modelbin_error' not in result and result['modelbin']['parts'] > 10 and not result['modelbin']['skipped']
+    assert (folder / 'README.txt').is_file() and (folder / 'body.modelbin').is_file()
+    assert (folder / f'{added_name}.modelbin').is_file()          # the part pasted in this test is exported too
     library = cl.Library(str(GAME), [str(Path(result['folder']).parent)])
     source = next(s['id'] for s in library.sources() if s['kind'] == 'dlc')
     new_car = library.cars(source)[0]
