@@ -82,6 +82,7 @@ class Session:
         self.baseline = set()
         self.export_dirs = []
         self.output_dir = ''                   # the last folder an export went to (ZIP or DLC package): offered again next time
+        self.notice = ''                       # a sentence about what the last edit did that the user should know (shown in the status line)
 
     def load(self, data: bytes, name: str, path: Path | None = None, origin: dict | None = None):
         c = fc.parse(data)
@@ -119,7 +120,7 @@ class Session:
         s = cg.summary(self.carbin)
         s.update({"name": self.name, "path": str(self.path) if self.path else "", "undo": len(self.undo), "redo": len(self.redo),
                   "problems": new_problems(self.carbin, self.baseline), "size": len(fc.build(self.carbin)), "origin": self.origin,
-                  "clipboard": self.clipboard.info(), "last_pasted": self.last_pasted})
+                  "clipboard": self.clipboard.info(), "last_pasted": self.last_pasted, "notice": self.notice})
         return s
 
 
@@ -600,9 +601,11 @@ def add_model_geometry(a):
         paint_atlases(dict(a["texture"], stage_only=True))
 
 
-def model_operation(a, operation, section_keys, skip_missing=False):
+def model_operation(a, operation, section_keys, skip_missing=False, missing_as_new=False):
     """Build paired edits in memory; only commit after both files validate. With skip_missing, a part that the other model does not have
-    (the close-up model leaves out some parts, e.g. the Alfa 8C's hood) is simply not moved there instead of cancelling the whole edit."""
+    (the close-up model leaves out some parts, e.g. the Alfa 8C's hood) is simply not moved there instead of cancelling the whole edit.
+    With missing_as_new (adding a model), a target part that the other model does not have makes the model go into the other model as a NEW
+    part of its own (a normal custom model) instead of cancelling, and a notice says so."""
     if not a.get('both_models'):
         return operation(a)
     media, relative, _ = origin_car()
@@ -625,6 +628,7 @@ def model_operation(a, operation, section_keys, skip_missing=False):
     texture = a.get('texture')
     a = dict(a, _skip_paint=True)
     args['_skip_paint'] = True
+    converted = []                                           # target parts the other model lacks: the model is added there as a new part
     for key in section_keys:
         indices = a[key] if isinstance(a[key], list) else [a[key]]
         mapped = []
@@ -633,11 +637,25 @@ def model_operation(a, operation, section_keys, skip_missing=False):
             matches = [i for i, s in enumerate(other.sections) if s.name.lower() == name.lower()]
             if not matches and skip_missing:
                 continue
+            if not matches and missing_as_new:
+                mapped.append(next((i for i, s in enumerate(other.sections) if s.subs), 0))     # only the template for the new part's header
+                if a.get('mode') != 'new':
+                    converted.append((name, a.get('mode')))
+                continue
             if len(matches) != 1:
                 raise ValueError(f'The other model of this car has {"no part" if not matches else "several parts"} named {name}, so this cannot be done in both models. '
                                  'Untick the both-models option (Driving + photo / Main + LOD0) to change only the open model. Nothing was changed.')
             mapped.append(matches[0])
         args[key] = mapped if isinstance(a[key], list) else mapped[0]
+    notice = ''
+    if converted:
+        part, how = converted[0]
+        args['mode'] = 'new'
+        args['name'] = f'{part}_custom'
+        notice = (f'The close-up/photo model has no part named {part}, so the model was added there as a new part (a normal custom model), '
+                  f'not {"in place of" if how == "replace" else "onto"} {part}.')
+        if how == 'replace':
+            notice += f' If the photo model draws its own {part} under another part name, hide or delete that part there.'
     if 'lods' in a:
         args['lods'] = sorted(set(cg.summary(other)['array_lods'])) or sorted({s.lod for sec in other.sections for s in sec.subs})
     original = S.carbin
@@ -675,10 +693,11 @@ def model_operation(a, operation, section_keys, skip_missing=False):
             if old.lower() == key.lower():
                 del S.staged[old]
         S.staged[key] = raw
+    S.notice = notice
 
 
 def op_add_model(a):
-    return model_operation(a, add_model_geometry, ['section'])
+    return model_operation(a, add_model_geometry, ['section'], missing_as_new=True)
 
 
 def car_replacements():
@@ -1406,6 +1425,7 @@ class Handler(BaseHTTPRequestHandler):
                     if fn is None:
                         raise ValueError(f"unknown operation {a['op']}")
                     before = S.capture()
+                    S.notice = ''
                     try:
                         fn(a)
                         fc.build(S.carbin)          # an edit that cannot be written back into the file must not stay applied

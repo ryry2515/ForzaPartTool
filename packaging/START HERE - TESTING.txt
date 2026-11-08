@@ -2,6 +2,7 @@ ForzaPartTool 2.0.1
 
 What is new in 2.0.1:
 - NEW: Save project / Open project (File tab). It saves everything you have done to the open car (the model with all its edits, staged files and painted textures, body numbers) as one .fptproj file, without writing anything into the game. Open it again later, or drag it onto the window. Exporting as a DLC car now also saves a project next to the package.
+- CHANGED: adding a model in "Driving + photo models" no longer fails when the close-up/photo model has no part with the name of the part you picked (for example a hood the photo model leaves out). The model is added to the photo model as a new part of its own (named <part>_custom), the driving model is edited as you asked, and the status line says what happened. Before, you had to untick the option, which left the photo model without your model (broken camera mode). Several parts with the same name in the other model still stop the edit, with a message.
 - FIXED: "add_model failed: zero-size array to reduction operation maximum which has no identity". It happened with automatic LODs on thin or flat parts (backface geometry, thin tubes, badges): the simplified copy could end up with no triangles. It now keeps a valid piece instead.
 
 Earlier in 2.0.0:

@@ -40,15 +40,48 @@ def test_paired_import_stages_both_models_and_undo_restores_them(editor):
     assert server.S.staged == staged
 
 
-def test_missing_paired_part_does_not_change_current_or_staged(editor):
+def test_missing_paired_part_is_added_as_a_new_part_in_the_other_model(editor):
+    """The close-up/photo model often lacks a part the driving model has (a hood, say). Adding a model onto that part in both models used to fail
+    ("the other model of this car has no part named ..."); the model now goes into the other model as a new part of its own, and a notice says so."""
     open_alfa(editor)
     server.S.carbin.sections[0].name = 'only_in_this_file'
-    before = fc.build(server.S.carbin)
-    with pytest.raises(ValueError, match='part'):
-        server.op_add_model(triangle_request(0))
-    assert fc.build(server.S.carbin) == before
-    assert not server.S.staged
+    summary = editor('/api/op', triangle_request(0))
+    assert 'only_in_this_file' in summary['notice'] and 'new part' in summary['notice']
+    assert not cg.validate(server.S.carbin)
+    assert cg.decode_pool(server.S.carbin.sections[0], cg.active_pool(server.S.carbin.sections[0])).pos[:, 1].max() > 3     # added onto the part in the open model
+    main = server.origin_car()[1]
+    other = fc.parse(server.S.staged[main[:-7] + '_lod0.carbin'])
+    assert not cg.validate(other)
+    made = next(s for s in other.sections if s.name == 'only_in_this_file_custom')                  # a new part of its own in the other model
+    assert cg.decode_pool(made, cg.active_pool(made)).pos[:, 1].max() > 3
+    assert not any(s.name == 'only_in_this_file' for s in other.sections)
+    editor('/api/undo', {})                                                                          # one undo takes both models back
+    assert not server.S.staged or main[:-7] + '_lod0.carbin' not in server.S.staged
 
+
+def test_replace_in_both_models_with_a_missing_part_says_what_it_did(editor):
+    open_alfa(editor)
+    server.S.carbin.sections[0].name = 'only_in_this_file'
+    request = dict(triangle_request(0), mode='replace')
+    summary = editor('/api/op', request)
+    assert 'in place of' in summary['notice'] and 'hide or delete' in summary['notice']
+
+
+def test_several_paired_parts_with_the_same_name_still_refuse(editor):
+    import copy
+    from pathlib import Path
+    open_alfa(editor)
+    target = next(i for i, s in enumerate(server.S.carbin.sections) if s.name.lower() == 'body')
+    paired = server.origin_car()[1][:-7] + '_lod0.carbin'
+    archive = server.origin_zip()
+    member = server.find_member(archive, str(Path(server.S.origin['member']).with_name(paired)).replace('\\', '/'))
+    other = fc.parse(server.xlzx.read_member(archive, member))
+    other.sections.append(copy.deepcopy(next(s for s in other.sections if s.name.lower() == 'body')))     # a second part called body
+    server.S.staged[paired] = fc.build(other)
+    before = fc.build(server.S.carbin)
+    with pytest.raises(ValueError, match='several parts'):
+        server.op_add_model(triangle_request(target))
+    assert fc.build(server.S.carbin) == before
 
 def test_coordinate_api_is_undoable(editor):
     open_alfa(editor)

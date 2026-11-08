@@ -917,7 +917,7 @@ async function commitModel() {
     return;
   }
   selectSection(target); setTab('model');
-  if (both_models) status('Merged into driving + photo models. Apply to existing car or export the car ZIP to save.');
+  if (both_models) status((st.sum.notice ? st.sum.notice + ' ' : '') + 'Merged into driving + photo models. Apply to existing car or export the car ZIP to save.', !!st.sum.notice);
 }
 
 $('#modelIn').addEventListener('change', async e => { const f = e.target.files[0]; e.target.value = ''; if (f) await loadModelFile(f); });
