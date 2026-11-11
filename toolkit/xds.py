@@ -276,17 +276,24 @@ def _level_template(data: bytes, lv: dict) -> bytes:
     return bytes(hd) + seg + bytes(lv["size"] - len(seg))
 
 
-def downsample(rgba: np.ndarray, w: int, h: int) -> np.ndarray:
-    """Box-filter an RGBA image to (h, w)."""
-    a = rgba.astype(np.float32)
+def _downsample_f(a: np.ndarray, w: int, h: int) -> np.ndarray:
+    """Box-filter a float32 RGBA image down to (h, w), staying in float32 (no rounding), so a mip chain can be built level by level from the one before."""
     while a.shape[1] > w or a.shape[0] > h:
         if a.shape[0] % 2:
             a = np.concatenate([a, a[-1:]], 0)
         if a.shape[1] % 2:
             a = np.concatenate([a, a[:, -1:]], 1)
-        a = a.reshape(a.shape[0] // 2 if a.shape[0] > h else a.shape[0], 2 if a.shape[0] > h else 1,
-                      a.shape[1] // 2 if a.shape[1] > w else a.shape[1], 2 if a.shape[1] > w else 1, 4).mean((1, 3))
-    return np.clip(np.round(a), 0, 255).astype(np.uint8)
+        if a.shape[0] > h and a.shape[1] > w:                    # the usual step, both sides halve: four slices added, much faster than a generic mean
+            a = (a[0::2, 0::2] + a[1::2, 0::2] + a[0::2, 1::2] + a[1::2, 1::2]) * np.float32(0.25)
+        else:
+            a = a.reshape(a.shape[0] // 2 if a.shape[0] > h else a.shape[0], 2 if a.shape[0] > h else 1,
+                          a.shape[1] // 2 if a.shape[1] > w else a.shape[1], 2 if a.shape[1] > w else 1, 4).mean((1, 3))
+    return a
+
+
+def downsample(rgba: np.ndarray, w: int, h: int) -> np.ndarray:
+    """Box-filter an RGBA image to (h, w)."""
+    return np.clip(np.round(_downsample_f(rgba.astype(np.float32), w, h)), 0, 255).astype(np.uint8)
 
 
 def encode_like(template: bytes, rgba: np.ndarray, mips: bool = True) -> bytes:
@@ -297,14 +304,18 @@ def encode_like(template: bytes, rgba: np.ndarray, mips: bool = True) -> bytes:
     if not lay or len(lay) < 2:
         return out
     payload = bytearray(out[HEADER:])
-    orig_base = decode(template).astype(np.float32)
+    # Both mip chains are built one level from the one before (float32, rounded per level), which gives the same pixels as downsampling from the base every time and costs a fraction.
+    old_chain = decode(template).astype(np.float32)
+    new_chain = np.asarray(rgba, np.uint8).astype(np.float32)
     for lv in lay[1:]:
+        old_chain = _downsample_f(old_chain, lv["w"], lv["h"])
+        new_chain = _downsample_f(new_chain, lv["w"], lv["h"])
         # only touch a level whose original content decodes sensibly under this layout (the smallest tail levels of some files are packed differently)
-        ref = downsample(orig_base.astype(np.uint8), lv["w"], lv["h"]).astype(np.float32)
+        ref = np.clip(np.round(old_chain), 0, 255).astype(np.float32)
         mse = float(((decode(template, lv["level"])[..., :3].astype(np.float32) - ref[..., :3]) ** 2).mean())
         if mse > 0 and 10 * np.log10(255 ** 2 / mse) < 15.0:
             continue
-        small = downsample(rgba, lv["w"], lv["h"])
+        small = np.clip(np.round(new_chain), 0, 255).astype(np.uint8)
         enc = _encode_level(_level_template(template, lv), small)
         payload[lv["offset"]:lv["offset"] + lv["size"]] = enc[HEADER:HEADER + lv["size"]]
     return template[:HEADER] + bytes(payload)

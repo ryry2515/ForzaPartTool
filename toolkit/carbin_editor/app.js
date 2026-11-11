@@ -5,7 +5,7 @@ import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { createWorkflow } from './editor_workflow.js';
-import { previewMaterial } from './viewer_materials.mjs';
+import { previewMaterial, applyTint } from './viewer_materials.mjs';
 import { createPartTools } from './part_tools.mjs';
 import { createPartGizmo } from './part_gizmo.mjs';
 import { SNAP, snapPosition, adjustScale, snapOn, uniformOn } from './gizmo_snap.mjs';
@@ -24,7 +24,7 @@ const el = (tag, attrs = {}, ...kids) => {
 // ---------------------------------------------------------------------------------------------- state
 const st = {
   viewGeneration: 0,
-  sum: null, sel: -1, hidden: new Set(), touched: new Set(), lods: new Set([0, 1, 2, 3, 4, 5]), groups: new Map(), geom: new Map(),
+  sum: null, sel: -1, selMat: null, drag: null, hidden: new Set(), touched: new Set(), lods: new Set([0, 1, 2, 3, 4, 5]), groups: new Map(), geom: new Map(),
   matCache: new Map(), atlas: new Map(), texMats: new Map(), texVer: 0, arch: null, filter: '', selLight: -1, objText: null, objInfo: null, objName: '',
 };
 const status = (msg, err = false) => {
@@ -343,7 +343,7 @@ function applyVisibility() {
   for (const [si, g] of st.groups) applySectionVisibility(si, g, opts);
   drawWheels(); drawCockpit(opts);
   grid.position.y = floorHeight();
-  drawSelection(); drawOverlays(); drawExtras();
+  drawSelection(); drawSubHighlight(); drawOverlays(); drawExtras();
   partGizmo.refresh(); updateGizmoUI();
 }
 
@@ -360,6 +360,23 @@ function drawSelection() {
   const box = new THREE.Box3().setFromObject(g);
   if (box.isEmpty()) return;
   selBox = new THREE.Box3Helper(box, 0x4aa3ff); overlay.add(selBox);
+}
+
+// The sub-part picked in the list glows orange in the view: copies of its meshes (same geometry) drawn over the originals.
+const subHighlightMaterial = new THREE.MeshBasicMaterial({ color: 0xff9a1f, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+let subHighlight = [];
+function drawSubHighlight() {
+  for (const o of subHighlight) overlay.remove(o);
+  subHighlight = [];
+  if (st.sel < 0 || !st.selMat) return;
+  const g = st.groups.get(st.sel);
+  if (!g || !g.visible) return;
+  for (const m of g.children) {
+    if (m.userData.mat !== st.selMat || !m.visible) continue;
+    const copy = new THREE.Mesh(m.geometry, subHighlightMaterial);
+    copy.renderOrder = 4; copy.raycast = () => {};                  // clicks go to the real mesh underneath
+    overlay.add(copy); subHighlight.push(copy);
+  }
 }
 
 // lights are stored with +z = front; meshes use -z = front, so lights and arrows are drawn with z negated
@@ -432,23 +449,58 @@ function buildLodBar() {
     bar.append(el('label', {}, cb, ' ' + l));
   }
 }
+// A part's sub-meshes grouped by material: one entry per material with every level of detail together (what "the glass of the body" means).
+function materialGroups(s) {
+  const groups = new Map();
+  for (const b of s.subs) {
+    const g = groups.get(b.material) || { material: b.material, lods: [], tris: 0, swatch: false, hidden: true };
+    g.lods.push(b.lod); g.tris += b.tris; g.swatch = g.swatch || b.swatch;
+    if (!st.sum.body_header || b.drawn_in.length) g.hidden = false;
+    groups.set(b.material, g);
+  }
+  return [...groups.values()];
+}
+const lodRange = lods => { const lo = Math.min(...lods), hi = Math.max(...lods); return lo === hi ? `L${lo}` : `L${lo}-${hi}`; };
+const lookOf = (s, material) => st.sum.looks?.[s.name + '|' + material];
+const rgbCss = rgb => `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
+
 function buildTree() {
   const t = $('#tree'); t.replaceChildren();
   for (const s of st.sum.sections) {
     if (!matchesFilter(s)) continue;
     const eye = el('input', { type: 'checkbox', checked: !st.hidden.has(s.index), onclick: e => e.stopPropagation(), onchange: e => { e.target.checked ? st.hidden.delete(s.index) : st.hidden.add(s.index); applyVisibility(); } });
     const notDrawn = st.sum.body_header && s.subs.length && s.subs.every(b => !b.drawn_in.length);
-    const row = el('div', { class: 'row', onclick: () => selectSection(s.index), oncontextmenu: event => partTools.menu(event, s.index) }, eye,
+    const row = el('div', { class: 'row', onclick: () => selectSection(s.index), oncontextmenu: event => partTools.menu(event, s.index),
+      ondragover: e => { if (st.drag && st.drag.si !== s.index) { e.preventDefault(); e.currentTarget.classList.add('drop'); } },
+      ondragleave: e => e.currentTarget.classList.remove('drop'),
+      ondrop: e => { e.preventDefault(); e.currentTarget.classList.remove('drop'); const d = st.drag; st.drag = null; if (d && d.si !== s.index) moveSubPart(d.si, d.material, s.index); } }, eye,
       el('span', { class: 'name' + (notDrawn ? ' warn' : ''), title: notDrawn ? 'not in any draw list: the game does not draw this part' : '' }, s.name),
       el('span', { class: 'tag' }, `${s.verts}v · ${s.subs.length}`));
-    const subs = el('div', { class: 'subs' }, s.subs.map(b => el('div', {}, el('span', {}, b.material + (b.swatch ? ' •' : '')), el('span', {}, `L${b.lod} · ${b.tris}t${st.sum.body_header && !b.drawn_in.length ? ' · hidden' : ''}`))));
+    const subs = el('div', { class: 'subs' }, materialGroups(s).map(g => {
+      const look = lookOf(s, g.material);
+      return el('div', { class: 'subrow' + (st.selMat === g.material && st.sel === s.index ? ' sel' : ''), draggable: 'true',
+        title: 'Click to edit this sub-part. Drag it onto another part to move it there, or onto the box at the bottom of the list to make it a part of its own.',
+        onclick: () => selectSection(s.index, g.material),
+        ondragstart: e => { st.drag = { si: s.index, material: g.material }; e.dataTransfer.setData('text/plain', g.material); e.dataTransfer.effectAllowed = 'move'; $('#dropOwn')?.classList.add('ready'); },
+        ondragend: () => { st.drag = null; $('#dropOwn')?.classList.remove('ready'); } },
+        el('span', { class: 'chip', style: look ? `background:${rgbCss(look.rgb)}` : undefined }),
+        el('span', { class: 'mname' }, g.material + (g.swatch ? ' •' : '')),
+        el('span', {}, `${lodRange(g.lods)} · ${g.tris}t${g.hidden && st.sum.body_header ? ' · hidden' : ''}`));
+    }));
     t.append(el('div', { class: 'sec' + (s.index === st.sel ? ' sel' : ''), 'data-si': s.index }, row, st.sel === s.index ? subs : ''));
+  }
+  if (st.sel >= 0 && st.sum.sections[st.sel]?.subs.length) {
+    t.append(el('div', { id: 'dropOwn', class: 'dropzone',
+      ondragover: e => { if (st.drag) { e.preventDefault(); e.currentTarget.classList.add('drop'); } },
+      ondragleave: e => e.currentTarget.classList.remove('drop'),
+      ondrop: e => { e.preventDefault(); e.currentTarget.classList.remove('drop'); const d = st.drag; st.drag = null; if (d) splitSubPart(d.si, d.material); } },
+      'Drop a sub-part here to take it out as a part of its own'));
   }
 }
 
-function selectSection(si) {
+function selectSection(si, material = null) {
   if (partGizmo.busy) return;
-  st.sel = si; partGizmo.select(si); buildTree(); drawSelection(); drawExtras(); renderPart(); setTab('part');
+  st.sel = si; st.selMat = material; partGizmo.select(si); buildTree(); drawSelection(); drawSubHighlight(); drawExtras(); renderPart(); setTab('part');
 }
 
 function updateGizmoUI() {
@@ -487,6 +539,7 @@ function renderPart() {
     el('div', { class: 'field' }, el('button', { onclick: () => partTools.copy(s.index) }, 'Copy coordinates'), el('button', { onclick: () => partTools.paste(s.index) }, 'Paste coordinates'), el('button', { onclick: () => partTools.mergeDialog(s.index) }, 'Merge into…')),
     el('div', { class: 'field' }, el('label', {}, 'name'), el('input', { id: 'pName', value: s.name }), el('button', { onclick: () => run('rename_section', { section: s.index, name: $('#pName').value }, []) }, 'Rename')),
     el('p', { class: 'muted' }, `pivot (${s.offset.map(v => v.toFixed(3)).join(', ')}) · half extents (${s.bmax.map(v => v.toFixed(3)).join(', ')}) · ${s.verts} vertices · pool ${s.pool}. The game finds some parts by name (for example hooda, exhaustLa): rename with care.`),
+    renderSubPart(s),
     el('h3', {}, 'Move, rotate, scale'),
     el('div', {class: 'field'}, ['translate','rotate','scale'].map((mode,i) => el('button', {
       'data-gizmo-mode': mode, onclick: () => { partGizmo.select(s.index); setGizmoMode(mode); }
@@ -522,6 +575,67 @@ function renderPart() {
   updateGizmoUI();
 }
 
+// ---------------------------------------------------------------------------------------------- sub-parts (a material of a part, every level of detail together)
+const pairArg = () => $('#partBoth').checked && canPairModels();
+const hexOf = rgb => '#' + rgb.map(v => Math.round(v).toString(16).padStart(2, '0')).join('');
+const rgbOfHex = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
+
+function renderSubPart(s) {
+  if (!st.selMat) {
+    return el('p', { class: 'muted' }, 'Click a name under the part in the list (left) to edit just that sub-part: rename it, colour it, take it out as a part of its own, or drag it onto another part.');
+  }
+  const g = materialGroups(s).find(x => x.material === st.selMat);
+  if (!g) { st.selMat = null; return el('div'); }
+  const look = lookOf(s, g.material);
+  const start = look ? hexOf(look.rgb) : '#808080';
+  const others = st.sum.sections.filter(x => x.index !== s.index && x.subs.length);
+  return el('div', { class: 'light sel' },
+    el('h3', {}, `Sub-part: ${g.material}`),
+    el('p', { class: 'muted' }, `${g.lods.length} level${g.lods.length === 1 ? '' : 's'} of detail (${lodRange(g.lods)}), ${g.tris} triangles${g.swatch ? ', one flat colour' : ''}. It glows orange in the view.`),
+    el('div', { class: 'field' }, el('label', {}, 'material'), el('input', { id: 'spName', value: g.material, list: 'materials' }),
+      el('button', { title: 'Every level of detail gets this material name. The name is the material the game draws it with: use one of the names the car already has (the list), or the game may not find it.', onclick: () => renameSubPart(s, g.material, $('#spName').value) }, 'Rename')),
+    el('div', { class: 'field' }, el('label', {}, 'colour'), el('input', { id: 'spColour', type: 'color', value: start }),
+      el('select', { id: 'spScope', title: 'Which sub-meshes read the new colour' },
+        el('option', { value: 'part' }, 'this part only'), el('option', { value: 'car' }, `every part's ${g.material}`)),
+      el('button', { class: 'primary', onclick: () => recolourSubPart(s, g.material) }, 'Apply')),
+    el('p', { class: 'muted' }, 'A flat colour of its own: it takes a small free block of the car\'s body texture (the preview shows it at once). Glass and lamps are coloured in the Glass & lights tab.'),
+    el('div', { class: 'field' }, el('label', {}, 'take out'), el('input', { id: 'spOut', value: `${s.name}_${g.material}` }),
+      el('button', { onclick: () => splitSubPart(s.index, g.material, $('#spOut').value) }, 'Own part')),
+    el('div', { class: 'field' }, el('label', {}, 'move into'),
+      el('select', { id: 'spInto' }, others.map(x => el('option', { value: x.index }, x.name))),
+      el('button', { onclick: () => $('#spInto').value !== '' && moveSubPart(s.index, g.material, parseInt($('#spInto').value)) }, 'Move')),
+    el('div', { class: 'field' }, el('button', { class: 'danger', onclick: () => deleteSubPart(s, g.material) }, 'Delete sub-part')));
+}
+
+async function renameSubPart(s, material, to) {
+  to = to.trim();
+  if (!to || to === material) return;
+  if (await run('rename_material', { section: s.index, material, to, both_models: pairArg() }, [s.index])) { st.selMat = to; renderPart(); buildTree(); drawSubHighlight(); }
+}
+
+async function recolourSubPart(s, material) {
+  const scope = $('#spScope').value;
+  busy.start('Painting the colour into the car\'s textures (a few seconds)');
+  try { await run('recolour', { section: s.index, material, rgb: rgbOfHex($('#spColour').value), scope, both_models: pairArg() }, scope === 'car' ? 'all' : [s.index]); }
+  finally { busy.end(); }
+}
+
+async function splitSubPart(si, material, name) {
+  const ok = await run('split_material', { section: si, material, name: (name || '').trim() || undefined, both_models: pairArg() }, 'all');
+  if (ok && st.sum.last_pasted != null) selectSection(st.sum.last_pasted);
+}
+
+async function moveSubPart(si, material, target) {
+  const ok = await run('move_material', { section: si, material, target, both_models: pairArg() }, 'all');
+  if (ok) { st.selMat = null; selectSection(target); }
+}
+
+async function deleteSubPart(s, material) {
+  if (!confirm(`Delete ${material} from ${s.name} (all ${materialGroups(s).find(x => x.material === material)?.lods.length ?? ''} levels of detail)? Undo brings it back.`)) return;
+  const ks = s.subs.filter(b => b.material === material).map(b => b.index);
+  if (await run('delete_sub', { section: s.index, subs: ks }, [s.index])) { st.selMat = null; renderPart(); buildTree(); drawSubHighlight(); }
+}
+
 async function doTransform(mirror) {
   const secs = $('#pScope').value === 'visible' ? st.sum.sections.filter(s => !st.hidden.has(s.index) && matchesFilter(s)).map(s => s.index) : [st.sel];
   await run('transform', {
@@ -539,7 +653,7 @@ async function run(op, args, reload) {
     st.sum = await post('/api/op', { op, ...args });
     for (const name of touched) st.touched.add(name);
     if (op === 'add_model' && args.mode === 'new' && st.sum.last_pasted != null) reload = [st.sum.last_pasted];   // a part of its own: load its geometry
-    if (args.texture) invalidateTextures();
+    if (args.texture || op === 'recolour') invalidateTextures();
     await afterChange(reload);
     status(`${op} done`);
     return true;
@@ -554,7 +668,9 @@ function afterChange(reload) {
     }
   }
   if (st.sel >= st.sum.sections.length) st.sel = -1;
+  if (st.selMat && !st.sum.sections[st.sel]?.subs.some(b => b.material === st.selMat)) st.selMat = null;
   buildLodBar(); buildTree(); renderPart(); if (!place.group) renderModel(); renderLights(); renderExhausts(); renderFile();
+  if (!$('#tab-look').hidden) renderLook();
   $('#fileName').textContent = `${st.sum.name} · ${(st.sum.size / 1024).toFixed(0)} KB`;
   if (reload === 'all') { return loadAll(); } else if (reload && reload.length) { return Promise.all(reload.map(index => loadSection(index))).then(() => status('updated')); }
   else applyVisibility();
@@ -1242,6 +1358,53 @@ async function skelSpeed(file, fi) {
   try { const r = await post('/api/skeleton/edit', { op: 'speed', file, factor: f }); status('animation saved: ' + r.saved); renderSkeleton(true); } catch (e) { status(e.message, true); }
 }
 
+// ---------------------------------------------------------------------------------------------- Glass & lights tab (the car's ShaderSettings.xml)
+const clamp01 = v => Math.min(1, Math.max(0, v));
+const toHexF = rgb => '#' + rgb.map(x => Math.round(clamp01(x) * 255).toString(16).padStart(2, '0')).join('');
+const fromHexF = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255);
+const setShader = (material, param, values) => run('shader_set', { material, param, values }, []);
+const resetShader = (material, param) => run('shader_reset', { material, param }, []);
+
+function lookRow(r, data) {
+  const kids = [el('div', { class: 'lookhead' }, el('strong', {}, r.label), el('span', { class: 'muted' }, ` ${r.material} · ${r.param}`), r.changed ? el('span', { class: 'pill' }, 'changed') : '')];
+  const v = r.values;
+  if (!r.present) {
+    const s = r.start;
+    kids.push(el('div', { class: 'field' }, el('span', { class: 'muted' }, 'The car has no value for this: the game uses its own.'),
+      el('button', { class: 'primary', onclick: () => setShader(r.material, r.param, { r: s[0], g: s[1], b: s[2], a: s[3] }) }, 'Tint…')));
+  } else if (r.param === 'GlassColor') {
+    const presets = r.material === 'window' ? data.window_presets : data.lamp_presets;
+    kids.push(el('div', { class: 'field' }, presets.map(([label, c]) => el('button', { onclick: () => setShader(r.material, r.param, { r: c[0], g: c[1], b: c[2], a: c[3] }) }, label))));
+    const picker = el('input', { type: 'color', value: toHexF([v.r, v.g, v.b]), title: 'Tint colour', onchange: e => { const [x, y, z] = fromHexF(e.target.value); setShader(r.material, r.param, { r: x, g: y, b: z }); } });
+    const opacity = el('input', { type: 'range', min: '0', max: '1', step: '0.01', value: String(v.a ?? 1), title: 'How strong the tint is', onchange: e => setShader(r.material, r.param, { a: parseFloat(e.target.value) }) });
+    kids.push(el('div', { class: 'field' }, el('label', {}, 'tint'), picker, el('label', {}, 'strength'), opacity, el('span', { class: 'muted' }, (v.a ?? 1).toFixed(2))));
+  } else if ('r' in v) {
+    const top = Math.max(1, v.r, v.g, v.b);
+    const picker = el('input', { type: 'color', value: toHexF([v.r / top, v.g / top, v.b / top]) });
+    const power = el('input', { type: 'number', min: '0', max: '16', step: '0.1', value: top.toFixed(2), title: 'Brightness (1 = normal)' });
+    const apply = () => { const k = Math.max(0, parseFloat(power.value) || 0); const [x, y, z] = fromHexF(picker.value); setShader(r.material, r.param, { r: x * k, g: y * k, b: z * k }); };
+    picker.addEventListener('change', apply); power.addEventListener('change', apply);
+    kids.push(el('div', { class: 'field' }, el('label', {}, 'colour'), picker, el('label', {}, 'brightness'), power));
+  } else if ('value' in v) {
+    kids.push(el('div', { class: 'field' }, el('label', {}, 'value'),
+      el('input', { type: 'number', min: '0', max: '16', step: '0.05', value: String(v.value), onchange: e => setShader(r.material, r.param, { value: parseFloat(e.target.value) }) })));
+  }
+  if (r.changed) kids.push(el('div', { class: 'field' }, el('button', { title: "Back to the car's own value", onclick: () => resetShader(r.material, r.param) }, 'Reset')));
+  return el('div', { class: 'light' + (r.changed ? ' sel' : '') }, kids);
+}
+
+async function renderLook() {
+  const box = $('#tab-look'); box.replaceChildren();
+  if (!st.sum?.origin) { box.append(el('p', { class: 'muted' }, 'Open Cars, right-click a car → Import, then tint its glass and lamps here.')); return; }
+  let data;
+  try { data = await api('/api/look'); } catch (e) { box.append(el('p', { class: 'problems' }, e.message)); return; }
+  if (!data.has) { box.append(el('p', { class: 'muted' }, 'This car has no ShaderSettings.xml, so its glass and lamp values cannot be edited.')); return; }
+  box.append(el('h3', {}, 'Glass and lamps'),
+    el('p', { class: 'muted' }, 'Window tint, lamp glass and bulb colours are values in the car\'s ShaderSettings.xml: a stock car or two set them this way. They go into the car with Export / Apply like any other edit, and the view shows them at once. Not yet seen in the game.'));
+  if (!data.rows.length) box.append(el('p', { class: 'muted' }, 'This car\'s file has no glass or lamp values to edit.'));
+  for (const r of data.rows) box.append(lookRow(r, data));
+}
+
 // ---------------------------------------------------------------------------------------------- top bar, tabs, open
 function setTab(name) {
   if (name !== 'physics') clearPhys();
@@ -1251,13 +1414,13 @@ function setTab(name) {
   if (name === 'model' && place.group) activatePlacement();
   if (name === 'part' && st.sel >= 0) partGizmo.select(st.sel);
 }
-for (const b of document.querySelectorAll('#tabs button')) b.addEventListener('click', () => { setTab(b.dataset.tab); if (b.dataset.tab === 'archive') renderArchive(); if (b.dataset.tab === 'strings') renderStrings(); if (b.dataset.tab === 'physics') renderPhysics(); if (b.dataset.tab === 'skeleton') renderSkeleton(); if (b.dataset.tab === 'parts') workflow.renderClipboard(); });
+for (const b of document.querySelectorAll('#tabs button')) b.addEventListener('click', () => { setTab(b.dataset.tab); if (b.dataset.tab === 'look') renderLook(); if (b.dataset.tab === 'archive') renderArchive(); if (b.dataset.tab === 'strings') renderStrings(); if (b.dataset.tab === 'physics') renderPhysics(); if (b.dataset.tab === 'skeleton') renderSkeleton(); if (b.dataset.tab === 'parts') workflow.renderClipboard(); });
 
 function resetView() {
   st.viewGeneration++;
   partGizmo.detach();
   clearPlacement();
-  st.sel = -1; st.hidden.clear(); st.touched.clear(); st.lodReset = true; st.selLight = -1; st.arch = null; st.atlas.clear(); st.texMats.clear(); st.texVer++; st.free = null; st.overwrite = new Set(); st.texRect = null;
+  st.sel = -1; st.selMat = null; st.hidden.clear(); st.touched.clear(); st.lodReset = true; st.selLight = -1; st.arch = null; st.atlas.clear(); st.texMats.clear(); st.texVer++; st.free = null; st.overwrite = new Set(); st.texRect = null;
   for (const g of st.groups.values()) { world.remove(g); g.traverse(object => object.geometry?.dispose()); }
   st.groups.clear(); st.wheelLayout = null; clearWheels(); clearCockpit();
   buildLodBar(); buildTree(); renderPart(); renderModel(); renderLights(); renderExhausts(); renderFile();      // renderModel: the Custom models tab said "Open a .carbin first." after a car was opened
@@ -1391,10 +1554,20 @@ function atlasTexture(name) {
   }, undefined, () => { if (revision === st.texVer) { st.atlas.set(name, false); if (name !== 'interior_emissive') status('Preview texture unavailable: ' + name, true); } });   // 6 stock cars have no emissive atlas: not worth an error
   return null;
 }
+// A part given a flat colour of its own (Sub-part panel) is drawn in that colour.
+function lookMaterial(look) {
+  const key = 'look|' + look.rgb.join(',');
+  if (!st.texMats.has(key)) st.texMats.set(key, new THREE.MeshStandardMaterial({ color: new THREE.Color(rgbCss(look.rgb)), roughness: 0.55, metalness: 0.08, side: THREE.DoubleSide }));
+  return st.texMats.get(key);
+}
 function meshMaterial(m, sec, cockpit = false) {
   const mode = $('#optTex').value;
+  const look = !cockpit && sec.name && st.sum?.looks?.[sec.name + '|' + m.userData.mat];
+  if (look) return lookMaterial(look);
   if (!st.sum.origin || mode === 'off') return material(m.userData.mat);
-  const profile = previewMaterial(m.userData.mat, sec.pool, cockpit || /_cockpit\.carbin$/i.test(st.sum.origin?.member || '') ? 'cockpit' : 'body');
+  const tint = st.sum.tints?.[m.userData.mat];                           // glass and lamp values edited in the Glass & lights tab
+  let profile = previewMaterial(m.userData.mat, sec.pool, cockpit || /_cockpit\.carbin$/i.test(st.sum.origin?.member || '') ? 'cockpit' : 'body');
+  if (tint) profile = applyTint(profile, tint);
   if (INSPECT_MODES.includes(mode) && profile.atlas !== mode) {          // inspecting one atlas: the parts that do not read it stay plain grey
     if (!st.texMats.has('plain')) st.texMats.set('plain', new THREE.MeshStandardMaterial({ color: 0x555b61, roughness: 0.9, metalness: 0, side: THREE.DoubleSide }));
     return st.texMats.get('plain');
@@ -1403,7 +1576,7 @@ function meshMaterial(m, sec, cockpit = false) {
   const tex = atlas ? atlasTexture(atlas) : null;
   if (atlas && !tex) return material(m.userData.mat);
   const glow = profile.emissiveAtlas && mode === 'auto' ? atlasTexture(profile.emissiveAtlas) : null;        // lit dial faces; false/null while it loads
-  const key = (atlas || 'solid') + '|' + m.userData.mat + (glow ? '|lit' : '');
+  const key = (atlas || 'solid') + '|' + m.userData.mat + (glow ? '|lit' : '') + (tint ? '|' + JSON.stringify(tint) : '');
   if (!st.texMats.has(key)) {
     const { atlas: unused, emissiveAtlas: unusedGlow, ...options } = profile;
     const extra = glow ? { emissive: 0xffffff, emissiveMap: glow, emissiveIntensity: 1.3 } : {};
