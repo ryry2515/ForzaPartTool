@@ -1,5 +1,23 @@
 import { strict as assert } from 'node:assert';
-import { previewMaterial } from '../toolkit/carbin_editor/viewer_materials.mjs';
+import { previewMaterial, applyTint } from '../toolkit/carbin_editor/viewer_materials.mjs';
+
+// Glass tint from ShaderSettings.xml: dark colour, opacity from the alpha; the original profile is not changed; no tint changes nothing
+{
+  const base = previewMaterial('window');
+  const dark = applyTint(base, { GlassColor: [0.02, 0.02, 0.02, 0.8] });
+  assert.equal(dark.color, 0x050505);
+  assert.equal(dark.opacity, 0.8);
+  assert.equal(dark.transparent, true);
+  assert.equal(dark.atlas, null);
+  assert.notEqual(base.color, dark.color);
+  assert.equal(applyTint(base, null), base);
+  assert.equal(applyTint(base, { GlassColor: [0, 0, 0, 2] }).opacity, 0.95);        // a very strong tint still shows what is behind it
+  assert.equal(applyTint(previewMaterial('detail_glass_red'), { GlassMaxOpacity: 0.3 }).opacity, 0.3);
+  assert.equal(applyTint(previewMaterial('detail_glass_red'), { GlassMaxOpacity: 0.3 }).atlas, 'lights');
+}
+// A lamp colour above 1 is a brightness: only its hue is drawn
+assert.equal(applyTint(previewMaterial('tail_light'), { colour: [4, 0, 0] }).color, 0xff0000);
+assert.equal(applyTint(previewMaterial('tail_light'), { colour: [0, 0.5, 0] }).color, 0x008000);
 
 // One bumper contains these separate shaders. Its part name cannot select their maps.
 assert.equal(previewMaterial('badge').atlas, 'nodamage');

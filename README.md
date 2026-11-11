@@ -27,6 +27,8 @@
 | | |
 |---|---|
 | Parts | Move / rotate / scale with a gizmo (snaps to 1 cm, 1 degree and 1 %, so 90 degrees is easy to hit; hold Alt to turn snapping off; one handle can scale all sides together) or numbers, mirror, rename, merge into another part, copy a part from another car, delete or retarget sub-meshes, hide a part from the game; every step undoable |
+| Sub-parts | Click a name under a part (a material, all LODs together): rename it, give it a flat colour, take it out as a part of its own or move it into another part (or drag it onto a part in the list); it glows in the view |
+| Glass and lamps | Window tint, lamp glass tint and strength, bulb colours and brightness (the car's `ShaderSettings.xml`), shown in the view and saved with the car |
 | Both models | Edits can be applied to the driving model and the close-up/photo model together |
 | Custom models | Import FBX, GLB/glTF or OBJ (and, as an experiment, a part from a modern Forza game: a `.modelbin`, sharpest LOD, no textures), place it with the gizmo, and add it as its own part (stays selectable and movable) or merge it into an existing part; automatic LODs; optional texture painted into the car's atlas |
 | Lights and exhausts | Light records and exhaust emitters, with position and colour |
@@ -77,7 +79,7 @@ Windows may warn about an unrecognised app because the exe is not code-signed.
 pip install numpy pywebview pyinstaller
 python toolkit/selftest.py "<your 4D5309C9 game folder>"        # checks the libraries against your files first
 python toolkit/carbin_editor/server.py --game "<game folder>" --dlc "<...\4D5309C9\00000002>"    # run from source
-python packaging/build_windows.py --version 2.1.0                # the Windows program, in build/
+python packaging/build_windows.py --version 2.2.0                # the Windows program, in build/
 ```
 
 To change the real cars you need a writable copy of the game, because a disc image is read-only. `python toolkit/extract_game.py "<game folder>" "<empty output folder>"` writes one (about 7 GB; it skips files already there, so it can be repeated after an interruption). Use that folder as the game folder in *Settings*, then *Apply to existing car*.

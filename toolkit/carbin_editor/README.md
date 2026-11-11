@@ -103,6 +103,8 @@ The Open / Save tab can copy the open car into a **new car inside a DLC package*
 | view | orbit/pan/zoom, click a part, LOD checkboxes, wireframe, selection box, light and exhaust markers, filter, hide parts, see which sub-meshes the game does not draw |
 | part | rename, move / rotate / scale (about the part pivot or the origin, optionally moving the pivot), mirror across an axis, one part or all shown parts |
 | sub-meshes | change a material name or LOD, delete a sub-mesh; draw lists are kept consistent |
+| sub-parts (a material of a part, all LODs together) | click the part, then a name under it: the sub-part glows in the view and gets its own panel to **rename** it, give it a **flat colour** (a free block of the body atlas is painted and the sub-meshes read it), take it **out as a part of its own**, or **move it into another part**. Drag a name onto another part in the list to move it there, or onto the box at the bottom of the list to take it out. One Undo step each; both models (driving + photo) together if ticked. `toolkit/part_look.py` |
+| glass and lamps | the **Glass & lights** tab edits the car's `ShaderSettings.xml`: window tint (`window` / `GlassColor`), lamp glass tint and opacity, bulb colours and brightness (`BrakeColor`, `TailLightColor`, `XenonHeadlightColor`, ...). Only the one value is changed in the text (3 % of the stock files are not well-formed XML); the view shows it at once; Reset puts the car's own value back |
 | draw lists | hide a part from the game or draw it again |
 | OBJ | export one part, the shown LODs or everything; **replace a part's geometry from an OBJ** that you edited in Blender (group names `<part>_<sub>_L<lod>` bring each LOD back) |
 | lights | edit, add, copy and remove the 32-byte light records: position, direction, role bytes, colour, glow size |
@@ -117,6 +119,14 @@ The Open / Save tab can copy the open car into a **new car inside a DLC package*
 
 Tested offline on the base game's cars: vertex decode and re-encode within 0.07 mm; OBJ export and import round trip for every part of three carbins, with identical triangle counts per LOD, identical draw lists and clean checks; adding a model onto a part keeps the old vertices byte for byte; saving into an extracted game copy and into a DLC package folder keeps every other archive member identical (Xbox LZX members included); the editor's API, undo, error handling, the drop-in flow in a browser.
 **Tested in the game (Xenia):** see "Save as a new car" above. **Not tested in the game:** everything listed there as built offline only. Test every change: one change per test, keep a booting build as the revert point, read `xenia.log`. The FBX and glTF loaders (three.js's) were driven in the browser with a binary FBX (centimetres) and a GLB; both loaded at the right size and added onto a part with clean checks.
+
+## Sub-parts, colours and tints: what is checked
+
+Checked offline on the stock cars: splitting, moving, renaming and recolouring keep the model valid (a random sweep over cars, each edit followed by validation and build + parse, then every edit undone back to the identical file); the flat colour is read back from the exported DLC car's atlas; the tint values come out in the exported `ShaderSettings.xml`; the viewer draws them. **Not seen in the game:** that FH1 draws a recoloured part, window tint and lamp tint exactly as the preview does. Window tint (`GlassColor` on `window`) and lamp colours are values a few stock cars set themselves (for example the Jeep Grand Cherokee SRT8: window 0.02 / 0.8; Camaro SS '69: red lamp glass), which is why they are offered, but test one change at a time.
+
+- A flat colour needs free room in the body atlas (a 32 x 32 pixel block each, 16 x 16 when crowded). Of 14 stock cars sampled, 11 had room for dozens of colours (5 to 30 percent of the atlas is free) and 3 had none; the editor then says so instead of overwriting anything.
+- Glass, lamps and materials that read a texture of their own (carbon fibre, grilles, rims, gauges) are not recoloured this way; glass and lamps have the Glass & lights tab.
+- A sub-part is a material of ONE part. Two pieces of one part that share a material move together; split them by giving one piece another material name first.
 
 ## Limits
 

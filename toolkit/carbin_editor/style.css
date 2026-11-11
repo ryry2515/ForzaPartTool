@@ -30,6 +30,16 @@ aside { background: var(--panel); overflow: auto; min-height: 0; }
 .sec .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sec .subs { padding: 0 8px 6px 30px; color: var(--muted); font-size: 12px; }
 .sec .subs div { display: flex; justify-content: space-between; gap: 6px; }
+.sec .subs .subrow { cursor: pointer; align-items: center; padding: 1px 4px; margin-left: -4px; border-radius: 4px; }
+.sec .subs .subrow:hover { background: var(--panel2); color: var(--text); }
+.sec .subs .subrow.sel { background: color-mix(in srgb, #ff9a1f 28%, transparent); color: var(--text); }
+.subrow .mname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.subrow .chip { flex: 0 0 10px; width: 10px; height: 10px; border-radius: 3px; border: 1px solid var(--line); background: transparent; }
+.sec .row.drop { outline: 2px dashed #ff9a1f; outline-offset: -2px; }
+.dropzone { margin: 8px; padding: 12px 8px; border: 1px dashed var(--line); border-radius: 6px; color: var(--muted); text-align: center; font-size: 12px; }
+.dropzone.ready { border-color: #ff9a1f; color: var(--text); }
+.dropzone.drop { background: color-mix(in srgb, #ff9a1f 22%, transparent); }
+.lookhead { margin-bottom: 4px; }
 .tag { font-size: 11px; color: var(--muted); }
 .warn { color: var(--bad); }
 .muted { color: var(--muted); }

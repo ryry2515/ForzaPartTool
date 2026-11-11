@@ -1,4 +1,13 @@
-ForzaPartTool 2.1.0
+ForzaPartTool 2.2.0
+
+What is new in 2.2.0 (asked for by a user: "everything customizable"):
+- NEW: Sub-parts. Click a part in the list, then a name under it (the material, for example "glass" or "black"). It glows orange in the view and the Part tab shows a panel for just that sub-part (every level of detail together): Rename it, give it a flat Colour, take it out as its own part ("Own part": it is then selectable and movable like any part), move it into another part, or delete it.
+- NEW: Drag and drop. Drag a name under the selected part onto another part in the list to move it there, or onto the box at the bottom of the list to take it out as a part of its own.
+- NEW: Colour. A sub-part can read a flat colour of its own: a small free block of the car's body texture is painted with the colour and the sub-part is pointed at it (this part only, or every part with that material). The view shows it at once. The first colour on a car takes several seconds (the textures are rewritten).
+- NEW: "Glass & lights" tab. Window tint, lamp glass tint and strength, headlight and tail light bulb colours and brightness: these are values in the car's ShaderSettings.xml. They are saved with the car (Export / Apply) and shown in the view at once. Reset puts the car's own value back.
+- Everything is one Undo step, and is applied to the driving and photo model together when that box is ticked.
+- Checked offline (a random sweep over stock cars, validation after every edit, everything undone back to the identical file; the exported DLC car reads back the colour and the tint). NOT yet seen in the game: please try one change at a time (a tinted window first) and tell me what the game shows.
+- Cars with almost no free room in their body texture cannot take another colour: the editor says so.
 
 2.1.0 collects everything since 2.0.0 (the notes below were written as 2.0.1 to 2.0.4).
 

@@ -1,3 +1,24 @@
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const hex = c => (Math.round(clamp(c[0], 0, 1) * 255) << 16) | (Math.round(clamp(c[1], 0, 1) * 255) << 8) | Math.round(clamp(c[2], 0, 1) * 255);
+
+// Draws the values a person changed in a car's ShaderSettings.xml (the Glass & lights tab); `tint` is what the server sends for ONE material and only for values that differ
+// from the car's own file: {GlassColor: [r, g, b, a], GlassMaxOpacity: v, colour: [r, g, b]}.
+// Glass: the colour is the tint and a its strength. A lamp colour above 1 is a brightness, so only its hue is shown (largest channel scaled to 1).
+export function applyTint(profile, tint) {
+  if (!tint) return profile;
+  const p = { ...profile };
+  if (tint.GlassColor) {
+    const [r, g, b, a] = tint.GlassColor;
+    p.color = hex([r, g, b]); p.transparent = true; p.depthWrite = false; p.opacity = clamp(a, 0.08, 0.95);
+  }
+  if (typeof tint.GlassMaxOpacity === 'number') { p.transparent = true; p.depthWrite = false; p.opacity = clamp(tint.GlassMaxOpacity, 0.05, 1); }
+  if (tint.colour) {
+    const top = Math.max(1, ...tint.colour);
+    p.color = hex(tint.colour.map(v => v / top));
+  }
+  return p;
+}
+
 // Viewport approximations of FH1 material families. An entire section does not share one sampler.
 // Shared carbon/grille and lamp sampler names are present in the game's compiled shader metadata.
 export function previewMaterial(name, pool = 'lod', context = 'body') {

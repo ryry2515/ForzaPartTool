@@ -50,6 +50,7 @@ import modelbin
 import modelbin_writer as mbw
 from carbin_parts import PartClipboard
 import part_actions
+import part_look as pl
 
 MAX_UNDO = 20
 MAX_BODY = 512 * 1024 * 1024                 # largest request body accepted (a model with textures is a few MB)
@@ -84,6 +85,7 @@ class Session:
         self.export_dirs = []
         self.output_dir = ''                   # the last folder an export went to (ZIP or DLC package): offered again next time
         self.notice = ''                       # a sentence about what the last edit did that the user should know (shown in the status line)
+        self.looks: dict = {}                  # "part|material" -> {rgb, cell}: parts given a flat colour of their own (the viewer draws them in it)
 
     def load(self, data: bytes, name: str, path: Path | None = None, origin: dict | None = None):
         c = fc.parse(data)
@@ -91,13 +93,14 @@ class Session:
         if key != getattr(self, '_stage_key', None):
             self.staged.clear()
             self.body_over.clear()
+            self.looks = {}
         self._stage_key = key
         self.carbin, self.name, self.path, self.origin = c, name, path, origin
         self.undo, self.redo, self.original = [], [], data
         self.baseline = problem_keys(data)
 
     def capture(self):
-        return (fc.build(self.carbin), dict(self.staged), self.last_pasted)
+        return (fc.build(self.carbin), dict(self.staged), self.last_pasted, json.loads(json.dumps(self.looks)))
 
     def unload(self):
         self.carbin, self.name, self.path, self.origin = None, '', None, None
@@ -106,11 +109,12 @@ class Session:
         self.redo.clear()
         self.staged.clear()
         self.body_over.clear()
+        self.looks = {}
         self.last_pasted = None
 
     def restore(self, state):
-        raw, staged, last_pasted = state
-        self.carbin, self.staged, self.last_pasted = fc.parse(raw), dict(staged), last_pasted
+        raw, staged, last_pasted, looks = state
+        self.carbin, self.staged, self.last_pasted, self.looks = fc.parse(raw), dict(staged), last_pasted, looks
 
     def snapshot(self):
         self.undo.append(self.capture())
@@ -122,6 +126,7 @@ class Session:
         s.update({"name": self.name, "path": str(self.path) if self.path else "", "undo": len(self.undo), "redo": len(self.redo),
                   "problems": new_problems(self.carbin, self.baseline), "size": len(fc.build(self.carbin)), "origin": self.origin,
                   "clipboard": self.clipboard.info(), "last_pasted": self.last_pasted, "notice": self.notice})
+        s.update(look_info())
         return s
 
 
@@ -624,7 +629,7 @@ def model_operation(a, operation, section_keys, skip_missing=False, missing_as_n
     other = fc.parse(other_raw if other_raw is not None else xlzx.read_member(archive, other_member))
     other_baseline = original_problem_keys(other_relative)
     a = dict(a, seed=a.get('seed') or secrets.randbits(62))
-    args = dict(a, both_models=False)
+    args = dict(a, both_models=False, _other=True)             # _other: this is the twin model, which may legitimately lack what the open model has
     # Both models share these atlases. Paint once after both geometries validate.
     texture = a.get('texture')
     a = dict(a, _skip_paint=True)
@@ -770,6 +775,195 @@ def op_merge_parts(a):
     return model_operation(a, lambda args: part_actions.merge_sections(S.carbin, args['source_section'], args['target_section']),
                            ['source_section', 'target_section'])
 
+# ---------------------------------------------------------------------------------------------- sub-parts: split out, move, rename, recolour; ShaderSettings.xml
+def _tolerant(args, work):
+    """Run `work`; in the twin model (args['_other']) a part or sub-part that is simply not there is skipped instead of cancelling the whole edit."""
+    try:
+        work()
+    except ValueError:
+        if not args.get('_other'):
+            raise
+
+
+def op_split_material(a):
+    def operation(args):
+        if not args.get('sections'):
+            return
+        def work():
+            S.last_pasted = pl.split_material(S.carbin, args['sections'][0], str(args['material']), str(args.get('name') or ''), args.get('_taken', ()))
+        _tolerant(args, work)
+    return model_operation(dict(a, sections=[a['section']]), operation, ['sections'], skip_missing=True)
+
+
+def op_move_material(a):
+    def operation(args):
+        if not args.get('sections') or not args.get('targets'):
+            return
+        _tolerant(args, lambda: pl.move_material(S.carbin, args['sections'][0], str(args['material']), args['targets'][0]))
+    return model_operation(dict(a, sections=[a['section']], targets=[a['target']]), operation, ['sections', 'targets'], skip_missing=True)
+
+
+def op_rename_material(a):
+    def operation(args):
+        if not args.get('sections'):
+            return
+        _tolerant(args, lambda: pl.rename_material(S.carbin, args['sections'][0], str(args['material']), str(args['to'])))
+    return model_operation(dict(a, sections=[a['section']]), operation, ['sections'], skip_missing=True)
+
+
+def twin_model():
+    """The other model of the open car (main <-> _lod0) as (relative file name, parsed model, baseline problems), or None when the open file is neither or the car has no twin."""
+    media, relative, _ = origin_car()
+    if relative.lower() not in {f'{media}.carbin'.lower(), f'{media}_lod0.carbin'.lower()}:
+        return None
+    archive = origin_zip()
+    wanted = f'{media}.carbin' if relative.lower().endswith('_lod0.carbin') else f'{media}_lod0.carbin'
+    try:
+        member = find_member(archive, str(Path(S.origin['member']).with_name(wanted)).replace('\\', '/'))
+    except KeyError:
+        return None
+    relative2 = re.sub(rf'(?i)^media/cars/{re.escape(media)}/', '', member)
+    raw = next((v for k, v in S.staged.items() if k.lower() == relative2.lower()), None)
+    return relative2, fc.parse(raw if raw is not None else xlzx.read_member(archive, member)), original_problem_keys(relative2)
+
+
+def op_recolour(a):
+    """Give a material group a flat colour of its own: a free 32x32 pixel block of the car's body atlases is painted with the colour and the sub-meshes are pointed at it.
+    scope 'part': only this part's sub-meshes of the material; 'car': every part's. With both_models the twin model is changed too."""
+    rgb = [int(round(float(v))) for v in a['rgb']]
+    if len(rgb) != 3 or not all(0 <= v <= 255 for v in rgb):
+        raise ValueError('The colour needs three numbers from 0 to 255')
+    si, material = int(a['section']), str(a['material'])
+    scope = 'car' if a.get('scope') == 'car' else 'part'
+    sec = part_actions.section_at(S.carbin, si)
+    twin = twin_model() if a.get('both_models') else None
+    cars = [S.carbin] + ([twin[1]] if twin else [])
+    targets = {}
+    for car in cars:
+        if car is S.carbin:
+            index = si
+        else:
+            same = [i for i, s in enumerate(car.sections) if s.name.lower() == sec.name.lower()]
+            index = same[0] if len(same) == 1 else -1
+        targets[id(car)] = pl.recolour_targets(car, index, material, scope)
+    mine = targets[id(S.carbin)]
+    if not mine:
+        why = {pl.flat_problem(sb) for sb in sec.subs if sb.name == material} - {None}
+        raise ValueError(f'{material} cannot be given a flat colour here' + (f': {sorted(why)[0]}' if why else ''))
+    key = f'{sec.name}|{material}'
+    cell, size = None, pl.CELL
+    previous = S.looks.get(key) if scope == 'part' else None
+    if previous and previous.get('cell'):                      # recolouring the same part again: reuse its block when nothing else reads it
+        size = int(previous.get('size', pl.CELL))
+        u, v = pl.cell_centre(tuple(previous['cell']), size)
+        if all(pl.count_pointing(car, u, v) == len(targets[id(car)]) for car in cars):
+            cell = tuple(previous['cell'])
+    if cell is None:
+        try:
+            white = ap.white_mask(xds.decode(preview_texture_blob('nodamage')), pl.RES)
+        except KeyError:
+            raise ValueError("This car has no body atlas (nodamage) to colour into") from None
+        blocked = pl.uv_usage(cars) | ~white
+        for size in (pl.CELL, pl.CELL // 2):                    # a crowded atlas gets a smaller block (16 px instead of 32) rather than none
+            cell = pl.find_free_cell(blocked, size)
+            if cell is not None:
+                break
+        if cell is None:
+            raise ValueError("There is no free room left in this car's body atlas for another colour of its own. Undo a colour you no longer need, or recolour a part that already has its own.")
+    pixel = np.array([[[rgb[0], rgb[1], rgb[2], 255]]], np.uint8)
+    paint_atlases({"rgba": base64.b64encode(pixel.tobytes()).decode(), "w": 1, "h": 1, "rect": list(pl.cell_rect(cell, size)), "stage_only": True})
+    u, v = pl.cell_centre(cell, size)
+    for car in cars:
+        for i, k in targets[id(car)]:
+            pl.point_at(car.sections[i].subs[k], u, v)
+    if twin:
+        problems = new_problems(twin[1], twin[2])
+        if problems:
+            raise ValueError('Model validation failed: ' + '; '.join(problems[:5]))
+        S.staged[twin[0]] = fc.build(twin[1])
+    for name in sorted({S.carbin.sections[i].name for i, _ in mine}):
+        S.looks[f'{name}|{material}'] = {'rgb': rgb, 'cell': list(cell), 'size': size}
+    S.notice = f'{len(mine)} sub-mesh{"es" if len(mine) != 1 else ""} of {material} now read a flat colour of their own'
+
+
+def _shader_name():
+    """(archive member, name relative to the car folder) of the open car's ShaderSettings.xml, or (None, None)."""
+    z = origin_zip()
+    media, _, _ = origin_car()
+    for member in z.namelist():
+        rel = re.sub(rf'(?i)^media/cars/{re.escape(media)}/', '', member)
+        if rel.lower() == 'shadersettings.xml':
+            return member, rel
+    return None, None
+
+
+def shader_member():
+    """(archive member, name relative to the car folder, bytes) of the open car's ShaderSettings.xml, staged edit first; (None, None, None) when the car has none."""
+    member, rel = _shader_name()
+    if member is None:
+        return None, None, None
+    staged = next((raw for k, raw in S.staged.items() if k.lower() == rel.lower()), None)
+    return member, rel, staged if staged is not None else xlzx.read_member(origin_zip(), member)
+
+
+def original_shader_text() -> str:
+    """The car's ShaderSettings.xml as the archive has it (no staged edit)."""
+    return xlzx.read_member(origin_zip(), _shader_name()[0]).decode('latin-1')
+
+
+def look_info() -> dict:
+    """Preview data for the viewer: the flat colours given to parts and the glass / lamp values that differ from the car's file."""
+    out = {"looks": dict(S.looks), "tints": {}, "shader_has": False}
+    if S.origin is None or S.lib is None:
+        return out
+    try:
+        member, _, raw = shader_member()
+        if member is not None:
+            out["shader_has"] = True
+            out["tints"] = pl.tints(original_shader_text(), raw.decode('latin-1'))
+    except Exception:  # noqa: BLE001 - a car whose archive cannot be read has no preview tint; the edit itself reports real errors
+        pass
+    return out
+
+
+def look_rows() -> dict:
+    need_loaded()
+    member, _, raw = shader_member()
+    if member is None:
+        return {"has": False, "rows": [], "window_presets": [], "lamp_presets": []}
+    used = {sb.name for sec in S.carbin.sections for sb in sec.subs}
+    return {"has": True, "rows": pl.look_rows(original_shader_text(), raw.decode('latin-1'), used),
+            "window_presets": pl.WINDOW_PRESETS, "lamp_presets": pl.LAMP_GLASS_PRESETS}
+
+
+def _store_shader(rel: str, text: str) -> None:
+    """Stage the edited text, or drop the staged copy when it equals the car's own file again."""
+    original = original_shader_text()
+    if text == original:
+        for k in [k for k in S.staged if k.lower() == rel.lower()]:
+            del S.staged[k]
+    else:
+        S.staged[rel] = text.encode('latin-1')
+
+
+def op_shader_set(a):
+    member, rel, raw = shader_member()
+    if member is None:
+        raise ValueError('This car has no ShaderSettings.xml')
+    text = raw.decode('latin-1')
+    material, param = str(a['material']), str(a['param'])
+    attrs = pl.clean_values(param, a.get('values') or {}, pl.parse_settings(text).get(material, {}).get(param))
+    _store_shader(rel, pl.edit_checked(text, pl.set_param(text, material, param, attrs)))
+
+
+def op_shader_reset(a):
+    member, rel, raw = shader_member()
+    if member is None:
+        raise ValueError('This car has no ShaderSettings.xml')
+    text = raw.decode('latin-1')
+    _store_shader(rel, pl.reset_param(text, original_shader_text(), str(a['material']), str(a['param'])))
+
+
 def op_obj_info(a):
     parsed = cg.parse_obj(a["text"], flip_v=True)
     return {"objects": {o: {str(lod): {m: int(len(g["tris"])) for m, g in mats.items()} for lod, mats in d.items()} for o, d in parsed.items()}}
@@ -788,6 +982,12 @@ OPS = {
     "exhaust_set": lambda a: cg.set_exhaust_pos(S.carbin, a["index"], a["pos"]),
     "import_obj": op_import_obj,
     "add_model": op_add_model,
+    "split_material": op_split_material,
+    "move_material": op_move_material,
+    "rename_material": op_rename_material,
+    "recolour": op_recolour,
+    "shader_set": op_shader_set,
+    "shader_reset": op_shader_reset,
 }
 
 
@@ -1109,7 +1309,7 @@ def project_bytes() -> bytes:
     import io
     import zipfile
     meta = {"app": "ForzaPartTool", "version": PROJECT_VERSION, "name": S.name, "origin": S.origin, "body_over": S.body_over,
-            "staged": sorted(S.staged)}
+            "staged": sorted(S.staged), "looks": S.looks}
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("project.json", json.dumps(meta, indent=1))
@@ -1149,6 +1349,8 @@ def project_open(body: bytes) -> dict:
     S.staged.clear()
     S.staged.update(staged)
     S.body_over = {k: float(v) for k, v in (meta.get("body_over") or {}).items()}
+    S.looks = {str(k): {"rgb": [int(c) for c in v["rgb"]], "cell": [int(c) for c in v["cell"]], "size": int(v.get("size", pl.CELL))} for k, v in (meta.get("looks") or {}).items()
+               if isinstance(v, dict) and len(v.get("rgb", ())) == 3 and len(v.get("cell", ())) == 2}
     if origin and S.lib:                                    # the file as the game has it, so "changed" and the checks compare with the real original
         try:
             original = S.lib.read(origin["source"], origin["archive"], origin["member"])
@@ -1279,6 +1481,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(wheel_layout())
                 if u.path == "/api/physics":
                     return self._json(physics_info())
+                if u.path == "/api/look":
+                    return self._json(look_rows())
                 if u.path == "/api/skeleton":
                     return self._json(skeleton_info())
                 if u.path == "/api/atlas_free":
