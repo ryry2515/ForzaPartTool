@@ -1,6 +1,9 @@
-ForzaPartTool 2.2.0
+ForzaPartTool 2.3.0
 
-What is new in 2.2.0 (asked for by a user: "everything customizable"):
+What is new in 2.3.0 (asked for by a modder):
+- NEW: Replace mode in Export as DLC. Tick "Replace the original car": the package keeps the car's own Data_Car id, and the database change is a plain-text .sql file (execute.sql, run by the game at start-up like the Wheel Adder's), not a .slt database. The file is one line: INSERT OR REPLACE INTO [Data_Car] ... with every column of the car's own row and MediaName changed to the name of the folder you made for the new model. The car's files go in that folder (media/cars/<new name>/). The new name must be the same length as the original (the name is also patched inside the files). The same .sql is written next to the package so you can read it. Checked offline (the patch run on a copy of the game's database leaves the same row count and only MediaName changed); NOT yet seen in the game.
+
+Earlier: what was new in 2.2.0 (asked for by a user: "everything customizable"):
 - NEW: Sub-parts. Click a part in the list, then a name under it (the material, for example "glass" or "black"). It glows orange in the view and the Part tab shows a panel for just that sub-part (every level of detail together): Rename it, give it a flat Colour, take it out as its own part ("Own part": it is then selectable and movable like any part), move it into another part, or delete it.
 - NEW: Drag and drop. Drag a name under the selected part onto another part in the list to move it there, or onto the box at the bottom of the list to take it out as a part of its own.
 - NEW: Colour. A sub-part can read a flat colour of its own: a small free block of the car's body texture is painted with the colour and the sub-part is pointed at it (this part only, or every part with that material). The view shows it at once. The first colour on a car takes several seconds (the textures are rewritten).

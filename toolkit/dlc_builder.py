@@ -116,7 +116,7 @@ def finish_merge_db(db: sqlite3.Connection) -> bytes:
     return data
 
 
-def build_files(offer: int, *, merge_db: bytes, car_zips: dict[str, dict[str, bytes]] | None = None,
+def build_files(offer: int, *, merge_db: bytes | None = None, execute_sql: bytes | None = None, car_zips: dict[str, dict[str, bytes]] | None = None,
                 string_tables: dict[str, dict[str, bytes]] | None = None, loose_files: dict[str, bytes] | None = None,
                 extra_mounts: list[tuple[str, str]] = ()) -> dict[str, bytes]:
     """Return {path inside the package: bytes}.
@@ -128,7 +128,10 @@ def build_files(offer: int, *, merge_db: bytes, car_zips: dict[str, dict[str, by
     files: dict[str, bytes] = {f"Media/{offer}.puboffer": PUBOFFER}
     for i, (_, members) in enumerate((car_zips or {}).items()):
         files[f"Media/DLCZips/{offer}_pri_99.zip" if i == 0 else f"Media/DLCZips/{offer}part{i + 1}_pri_99.zip"] = make_zip(members)
-    files[f"Media/DLCZips/{offer}_pri_99/Media/db/patch/{offer}00_merge.slt"] = merge_db
+    if merge_db is not None:
+        files[f"Media/DLCZips/{offer}_pri_99/Media/db/patch/{offer}00_merge.slt"] = merge_db
+    if execute_sql is not None:                       # a plain-text SQL patch the game runs at start-up (like the Wheel Adder's execute.sql)
+        files[f"Media/DLCZips/{offer}_pri_99/Media/db/patch/{offer}00_execute.sql"] = execute_sql
     tables = ["ContentOffers", "Data_Car"]
     for table, langs in (string_tables or {}).items():
         if table not in tables:
@@ -201,8 +204,9 @@ def verify_folder(folder) -> list[str]:
         if len(low) != len(set(low)):
             problems.append(f"{n}: two members differ only by case (crashes the game)")
     merges = pkg.merges()
-    if len(merges) != 1:
-        problems.append(f"expected one merge database, found {len(merges)}")
+    has_sql = any(n.lower().endswith("_execute.sql") for n in pkg.names())
+    if len(merges) != 1 and not (has_sql and not merges):
+        problems.append(f"expected one merge database or one execute.sql, found {len(merges)} databases")
     for blob in merges:
         con = srcmod.open_db(blob)
         if con.execute("pragma integrity_check").fetchone()[0] != "ok":

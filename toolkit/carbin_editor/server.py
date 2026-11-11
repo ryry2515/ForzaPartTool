@@ -1190,7 +1190,7 @@ def clone_defaults():
     return {"donor": media, "new_media": cc.same_length_name(media, used["media"]), "offer": offer, "staged": sorted(S.staged), "out_dir": S.output_dir or str(default_out_dir())}
 
 
-def do_clone(a):
+def _clone_inputs(a):
     media, rel, pkg = origin_car()
     files = dict(S.staged)
     if a.get("include_open", True):
@@ -1210,6 +1210,11 @@ def do_clone(a):
             stripped = str(Path(filename).with_name('stripped_' + Path(filename).name)).replace('\\', '/')
             if stripped.lower() in relative_names:
                 files[relative_names[stripped.lower()]] = fc.build(model, stripped=True)
+    return media, pkg, files
+
+
+def do_clone(a):
+    media, pkg, files = _clone_inputs(a)
     formats = a.get('formats', ['xenia'])
     if not isinstance(formats, list) or not formats or any(f not in ('xenia', 'stfs') for f in formats):
         raise ValueError("Choose Xenia folder and/or console STFS as an export format")
@@ -1265,6 +1270,49 @@ def do_clone(a):
         out["modelbin"] = {"folder": str(folder), "parts": len(written), "skipped": failed}
     except Exception as exc:
         out["modelbin_error"] = str(exc)
+    return out
+
+
+def do_replace(a):
+    """Replace the open car in place: the same Data_Car id, MediaName = the new folder name, the database change as a plain-text SQL file (execute.sql)."""
+    media, pkg, files = _clone_inputs(a)
+    formats = a.get('formats', ['xenia'])
+    if not isinstance(formats, list) or not formats or any(f not in ('xenia', 'stfs') for f in formats):
+        raise ValueError("Choose Xenia folder and/or console STFS as an export format")
+    root = Path(a['out_dir']).resolve()
+    package_name = dlcb.package_name(int(a['offer']))
+    targets = ([root / 'xenia' / package_name, root / 'xenia' / 'Headers' / '00000002' / (package_name + '.header')] if 'xenia' in formats else [])
+    if 'stfs' in formats:
+        targets.append(root / 'console' / package_name)
+    for target in targets:
+        if target.exists():
+            raise FileExistsError(f'Export already exists: {target}. Choose a new offer number or output folder.')
+    packs = export_packages(root)
+    res = cc.replace_car(S.lib.game, media, a["new_media"], int(a["offer"]), packs, donor_package=pkg, replace_files=files, log=lambda *_: None)
+    if res["report"]["problems"]:
+        return {"error": "the SQL patch failed its offline check", "problems": res["report"]["problems"]}
+    display = (a.get("display_name") or "").strip() or f"{a['new_media']} (replaces {media})"
+    out = {"mode": "replace", "car_id": res["report"]["car_id"], "media": a["new_media"], "donor": media}
+    if "xenia" in formats:
+        folder = dlcb.write_xenia_folder(res["files"], a["out_dir"], int(a["offer"]), display)
+        out.update({"folder": str(folder), "header": str(Path(a["out_dir"]) / "xenia" / "Headers" / "00000002" / (folder.name + ".header")), "problems": dlcb.verify_folder(folder)})
+    if "stfs" in formats:
+        stfs_path = Path(a["out_dir"]) / "console" / dlcb.package_name(int(a["offer"]))
+        out["stfs"] = str(dlcb.write_stfs(res["files"], stfs_path, display, f"{a['new_media']}: replaces {media}"))
+        out.setdefault("problems", [])
+    sql_path = root / f"{a['new_media']}_replace_{media}.sql"                  # the same patch, readable, next to the package
+    sql_path.write_text(res["sql"], encoding="utf-8", newline="\n")
+    out.update({"sql": str(sql_path), "files": res["report"]["files"], "edited": sorted(files)})
+    remembered = str(root)
+    S.export_dirs = [folder for folder in S.export_dirs if folder != remembered] + [remembered]
+    S.output_dir = remembered
+    save_settings()
+    try:
+        proj = root / f"{a['new_media']}.fptproj"
+        proj.write_bytes(project_bytes())
+        out["project"] = str(proj)
+    except Exception as exc:
+        out["project_error"] = str(exc)
     return out
 
 
@@ -1618,6 +1666,10 @@ class Handler(BaseHTTPRequestHandler):
                 if u.path == "/api/clone":
                     need_loaded()
                     res = do_clone(json.loads(body))
+                    return self._json(res, 409 if "error" in res else 200)
+                if u.path == "/api/replace":
+                    need_loaded()
+                    res = do_replace(json.loads(body))
                     return self._json(res, 409 if "error" in res else 200)
                 if u.path == "/api/library/config":
                     a = json.loads(body)

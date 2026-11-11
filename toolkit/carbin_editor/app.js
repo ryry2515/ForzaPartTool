@@ -1126,9 +1126,10 @@ async function buildNewCar() {
   try {
     status('building the new car (copying files, checking the database)...');
     busy.start('Building the new car (copying files, checking the database)…');
-    const r = await post('/api/clone', { new_media: v('ncName'), offer: parseInt(v('ncOffer')), out_dir: v('ncOut'), include_open: document.getElementById('ncOpen').checked, display_name: v('ncTitle'), short_name: v('ncShort'),
+    const replaceMode = document.getElementById('ncReplace') && document.getElementById('ncReplace').checked;
+    const r = await post(replaceMode ? '/api/replace' : '/api/clone', { new_media: v('ncName'), offer: parseInt(v('ncOffer')), out_dir: v('ncOut'), include_open: document.getElementById('ncOpen').checked, display_name: v('ncTitle'), short_name: v('ncShort'),
       formats: ['xenia', 'stfs'].filter(f => document.getElementById('nc_' + f).checked) });
-    st.cloneResult = r; st.cloneDef = null; loadCloneDefaults(); status(`new car built: id ${r.car_id}, ${r.rows} database rows, ${r.files} files`);
+    st.cloneResult = r; st.cloneDef = null; loadCloneDefaults(); status(r.mode === 'replace' ? `car ${r.car_id} replaced: MediaName ${r.donor} -> ${r.media}, SQL written, ${r.files} files` : `new car built: id ${r.car_id}, ${r.rows} database rows, ${r.files} files`);
   } catch (e) { st.cloneResult = { error: e.message, problems: e.problems || [] }; renderFile(); status(e.message, true); }
   finally { busy.end(); }
 }
@@ -1141,7 +1142,8 @@ function cloneSection() {
   const r = st.cloneResult;
   return [el('h3', {}, '4. Export as DLC (a new car in its own package)'),
     el('p', { class: 'muted' }, `Copies ${d.donor} into a new car with its own database rows and files, using your edited files instead of the original ones. Give it a name to show in the game (plain text, no string table needed), or leave the name empty to keep the donor's. Edited files you want in it: open each one, edit, and press Stage (the file that is open now is included automatically).`),
-    el('div', { class: 'field' }, el('label', {}, 'new name'), el('input', { id: 'ncName', value: d.new_media }), el('span', { class: 'muted' }, 'same length as ' + d.donor)),
+    el('div', { class: 'field' }, el('label', {}, 'mode'), el('label', { class: 'chk' }, el('input', { type: 'checkbox', id: 'ncReplace' }), ' Replace the original car: same id, the database change is a plain .sql file (MediaName = the folder name below)')),
+    el('div', { class: 'field' }, el('label', {}, 'new name'), el('input', { id: 'ncName', value: d.new_media }), el('span', { class: 'muted' }, 'same length as ' + d.donor + ' (in replace mode: the name of the folder that holds the model)')),
     el('div', { class: 'field' }, el('label', {}, 'name in game'), el('input', { id: 'ncTitle', placeholder: "empty = the donor's name" }), el('span', { class: 'muted' }, 'shown in the Autoshow and garage')),
     el('div', { class: 'field' }, el('label', {}, 'short name'), el('input', { id: 'ncShort', placeholder: 'empty = same as the name' })),
     el('div', { class: 'field' }, el('label', {}, 'offer no.'), el('input', { id: 'ncOffer', type: 'number', value: d.offer })),
@@ -1153,7 +1155,8 @@ function cloneSection() {
     el('div', { class: 'field' }, el('button', { onclick: () => stageFile(false) }, 'Stage this file'), el('button', { onclick: () => stageFile(true) }, 'Clear staged'), el('span', { class: 'muted' }, d.staged.length ? 'staged: ' + d.staged.join(', ') : 'nothing staged')),
     el('div', { class: 'field' }, el('button', { class: 'primary', onclick: buildNewCar }, 'Export as DLC')),
     r && r.error ? el('div', {}, el('p', { class: 'warn' }, r.error), r.problems && r.problems.length ? el('ul', { class: 'problems' }, r.problems.map(p => el('li', {}, p))) : '') : '',
-    r && (r.folder || r.stfs) ? el('div', {}, el('p', { class: 'ok' }, `Exported: car id ${r.car_id}, ${r.rows} rows in ${r.tables} tables, ${r.files} files; edited files: ${r.edited.join(', ')}. ${r.folder ? (r.problems.length ? 'Package problems: ' + r.problems.join('; ') : 'Package checks passed.') : 'Console package written and read back.'}`),
+    r && r.mode === 'replace' ? el('p', { class: 'ok' }, `Replace patch written: car id ${r.car_id} keeps its row, MediaName ${r.donor} -> ${r.media}. SQL: ${r.sql}`) : '',
+    r && (r.folder || r.stfs) ? el('div', {}, el('p', { class: 'ok' }, r.mode === 'replace' ? `Exported ${r.files} files.` : `Exported: car id ${r.car_id}, ${r.rows} rows in ${r.tables} tables, ${r.files} files; edited files: ${r.edited.join(', ')}. ${r.folder ? (r.problems.length ? 'Package problems: ' + r.problems.join('; ') : 'Package checks passed.') : 'Console package written and read back.'}`),
       r.folder ? el('div', {}, el('p', {}, 'Xenia (with Xenia closed): back up your save, copy the folder'), el('p', { class: 'muted' }, r.folder), el('p', {}, 'to  ...\\4D5309C9\\00000002\\  and the file'), el('p', { class: 'muted' }, r.header), el('p', {}, 'to  ...\\4D5309C9\\Headers\\00000002\\ .')) : '',
       r.stfs ? el('div', {}, el('p', {}, 'Modded 360: the console package'), el('p', { class: 'muted' }, r.stfs), el('p', {}, 'goes on a USB stick like any content package.')) : '',
       r.project ? el('p', { class: 'muted' }, 'Project saved next to the package: ' + r.project + ' (open it in the tool to carry on editing).') : '',

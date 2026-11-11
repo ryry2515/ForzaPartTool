@@ -255,6 +255,97 @@ def clone_car(game: src.BaseGame, donor_media: str, new_media: str, offer: int, 
     return {"files": files, "report": report, "merge_blob": merge_blob}
 
 
+def _sql_value(v) -> str:
+    if v is None:
+        return "NULL"
+    if isinstance(v, str):
+        return "'" + v.replace("'", "''") + "'"
+    if isinstance(v, bytes):
+        return "X'" + v.hex() + "'"
+    return repr(v)
+
+
+def _insert_sql(table: str, row: dict) -> str:
+    cols = list(row)
+    return (f"INSERT OR REPLACE INTO [{table}] ({','.join('[' + c + ']' for c in cols)}) "
+            f"VALUES ({','.join(_sql_value(row[c]) for c in cols)});\n")
+
+
+def replace_car(game: src.BaseGame, donor_media: str, new_media: str, offer: int, packages: list[src.DLCPackage] | None = None,
+                donor_package: src.DLCPackage | None = None, replace_files: dict[str, bytes] | None = None, log=print) -> dict:
+    """Replace a car IN PLACE: the same Data_Car id, the same rows for everything else, only MediaName changes to `new_media`, the name of the folder that
+    now holds the model. The database change is a plain-text SQL patch (Media/db/patch/<offer>00_execute.sql, run by the game at start-up like the Wheel Adder's):
+        INSERT OR REPLACE INTO [Data_Car] (...every column of the car's row...) VALUES (...);
+    The package ships the car's files under media/cars/<new_media>/ (base files win over a DLC folder of the SAME name, so the folder needs a NEW name:
+    that is why MediaName changes). new_media must have the length of donor_media (the name is also patched inside the binary files).
+    -> {"files": {path in package: bytes}, "sql": str, "report": {...}}"""
+    packages = packages or []
+    donor = src.Donor(donor_media, base=game, package=donor_package) if donor_package else src.Donor(donor_media, base=game)
+    if len(new_media) != len(donor_media):
+        raise ValueError(f"the new media name must have {len(donor_media)} characters like {donor_media}")
+    if new_media.lower() == donor_media.lower():
+        raise ValueError("the new name must differ from the original: the game reads a base car's own folder first")
+    used = src.scan_used_ids(game, packages, log=lambda *_: None)
+    if new_media.lower() in used["media"]:
+        raise ValueError(f"media name {new_media} is already used")
+    if offer in used["offer"]:
+        raise ValueError(f"offer number {offer} is already used by another package")
+    D = donor.row["Id"]
+    sdb = src.open_db(donor.db_blob)
+    cur = sdb.execute("select * from Data_Car where Id=?", (D,))
+    cols = [d[0] for d in cur.description]
+    row = dict(zip(cols, cur.fetchone()))
+    row["MediaName"] = new_media
+    pass
+    lines = [f"-- ForzaPartTool: replace car {D} ({donor_media}) with the model in media/cars/{new_media}/\n",
+             "-- The same Data_Car id; only MediaName changes. Run by the game at start-up from this package.\n",
+             _insert_sql("Data_Car", row),
+             _insert_sql("ContentOffers", b.content_offer_row(offer, "", "")),
+             _insert_sql("ContentOffersMapping", {"Id": offer * 1000, "OfferId": b.offer_id_int(offer), "ContentId": D, "ContentType": 1})]
+    sql = "".join(lines)
+
+    def rename_bytes(data: bytes) -> bytes:
+        for a, c in ((donor_media, new_media), (donor_media.lower(), new_media.lower()), (donor_media.upper(), new_media.upper())):
+            data = data.replace(a.encode(), c.encode())
+        return data
+
+    def rename_name(n: str) -> str:
+        def case(m):
+            s = m.group(0)
+            return new_media.lower() if s.islower() else new_media.upper() if s.isupper() else new_media
+        return re.sub(re.escape(donor_media), case, n, flags=re.I)
+    members: dict[str, bytes] = {}
+    for rel in donor.car_files():
+        data = (replace_files or {}).get(rel)
+        if data is None:
+            data = donor.read_car(rel)
+            if rel.lower().endswith(TEXT_EXT) or "digitalgauge" in rel.lower():
+                data = rename_bytes(data)
+        members[f"media/cars/{new_media}/{rename_name(rel)}"] = data
+    cmt = {k: v for k, v in donor.audio_xml().items() if k.startswith("CarModelTuning/")}
+    for k, v in cmt.items():
+        members[f"media/audio/cars/CarModelTuning/{rename_name(Path(k).name)}"] = rename_bytes(v)
+    files = b.build_files(offer, merge_db=None, execute_sql=sql.encode("utf-8"), car_zips={"car": members})
+
+    # ---- offline check: run the patch on a copy of the game's database and read the row back
+    base_copy = sqlite3.connect(":memory:")
+    base_copy.deserialize(game.gamedb)
+    base_copy.executescript(sql)
+    got = base_copy.execute("select Id, MediaName from Data_Car where Id=?", (D,)).fetchone()
+    problems = [] if got == (D, new_media) else [f"the SQL patch did not leave Data_Car {D} with MediaName {new_media}: {got}"]
+    other = base_copy.execute("select count(*) from Data_Car").fetchone()[0] - game_count(game)
+    if other:
+        problems.append(f"the patch changed the number of Data_Car rows by {other}")
+    log(f"replace {donor_media} -> {new_media}: car id {D} kept, {len(members)} files")
+    return {"files": files, "sql": sql, "report": {"car_id": D, "media": new_media, "donor": donor_media, "offer": offer, "files": len(members), "problems": problems}}
+
+
+def game_count(game) -> int:
+    con = sqlite3.connect(":memory:")
+    con.deserialize(game.gamedb)
+    return con.execute("select count(*) from Data_Car").fetchone()[0]
+
+
 def check_merge(base_blob: bytes, merge_blob: bytes, other_merges=()) -> list[str]:
     """Merge the new database (and the other packages' databases) into a copy of the game database the way the game does: any key collision is reported."""
     problems = []
