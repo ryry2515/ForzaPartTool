@@ -43,6 +43,7 @@
 | Export car ZIP | A replacement car archive for an extracted game or DLC copy |
 | Apply to existing car | Writes into a writable game or DLC folder (a `.bak` is made once) |
 | Export as a new DLC car | A new car with its own ID and database rows, as a Xenia folder and/or console package, using your edited files; the output folder is remembered. It also writes the project, the model as OBJ + MTL (for Blender), and an experimental folder of `.modelbin` files, one per part |
+| Export as DLC, replace mode | Replaces the open car in place: **the same Data_Car id**, the database change as a plain-text **`.sql` file** (`INSERT OR REPLACE INTO [Data_Car] ...`, run by the game at start-up like the Wheel Adder's `execute.sql`) with `MediaName` set to the name of the folder you made for the new model. The new name must be the same length as the original. A readable copy of the `.sql` is written next to the package. Checked offline only |
 
 Also: a loading bar while cars load, **Unload car**, and remembered game and DLC folders. Saved settings live in `%APPDATA%\FH1CarbinEditor` (the folder keeps its first name so nothing is lost on upgrade) and never leave your computer.
 
@@ -79,7 +80,7 @@ Windows may warn about an unrecognised app because the exe is not code-signed.
 pip install numpy pywebview pyinstaller
 python toolkit/selftest.py "<your 4D5309C9 game folder>"        # checks the libraries against your files first
 python toolkit/carbin_editor/server.py --game "<game folder>" --dlc "<...\4D5309C9\00000002>"    # run from source
-python packaging/build_windows.py --version 2.2.0                # the Windows program, in build/
+python packaging/build_windows.py --version 2.3.0                # the Windows program, in build/
 ```
 
 To change the real cars you need a writable copy of the game, because a disc image is read-only. `python toolkit/extract_game.py "<game folder>" "<empty output folder>"` writes one (about 7 GB; it skips files already there, so it can be repeated after an interruption). Use that folder as the game folder in *Settings*, then *Apply to existing car*.
