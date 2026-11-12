@@ -1,6 +1,9 @@
-ForzaPartTool 2.3.0
+ForzaPartTool 2.3.1
 
-What is new in 2.3.0 (asked for by a modder):
+What is new in 2.3.1:
+- FIX: Replace mode no longer adds a ContentOffers and a ContentOffersMapping row. The game treats a car that has a mapping row as DLC content (it can disappear when the offer is not installed), and base cars have none. The package now changes only the Data_Car row (the new MediaName). Not seen in the game yet.
+
+Earlier: what was new in 2.3.0 (asked for by a modder):
 - NEW: Replace mode in Export as DLC. Tick "Replace the original car": the package keeps the car's own Data_Car id, and the database change is a plain-text .sql file (execute.sql, run by the game at start-up like the Wheel Adder's), not a .slt database. The file is one line: INSERT OR REPLACE INTO [Data_Car] ... with every column of the car's own row and MediaName changed to the name of the folder you made for the new model. The car's files go in that folder (media/cars/<new name>/). The new name must be the same length as the original (the name is also patched inside the files). The same .sql is written next to the package so you can read it. Checked offline (the patch run on a copy of the game's database leaves the same row count and only MediaName changed); NOT yet seen in the game.
 
 Earlier: what was new in 2.2.0 (asked for by a user: "everything customizable"):
