@@ -12,7 +12,7 @@ How the database rows are copied (measured on the base game):
     and torque curves (`TorqueCurveID` = engine * 1000 + n). Every id the donor OWNS gets a new, unused value; ids it merely points at (shared wheels, shared engine swaps,
     physics rows) are left alone.
   * each row of a per-car table is copied with its ids mapped; a single-column surrogate primary key (`Id`) gets a fresh value.
-  * a ContentOffers row and a ContentOffersMapping row make the package own the car.
+  * a ContentOffers row and a ContentOffersMapping row make the package own the car (clone mode only; replace mode adds none).
 New media name: the SAME LENGTH as the donor's (the name is replaced inside text and gauge files without moving any byte). New ids stay below 32768 (engine ids must).
 Checked offline before anything is written: merge into a copy of the game database (no key collisions), and the donor and the copy have the same number of rows in every table.
 Not tested in the game unless the editor README says so.
@@ -296,12 +296,12 @@ def replace_car(game: src.BaseGame, donor_media: str, new_media: str, offer: int
     cols = [d[0] for d in cur.description]
     row = dict(zip(cols, cur.fetchone()))
     row["MediaName"] = new_media
-    pass
+    # Only the Data_Car row. No ContentOffers / ContentOffersMapping rows: the game builds its "installed" table by grouping the mapping rows per car,
+    # and a car with a mapping row is treated as DLC content (it can disappear when the offer is not installed). Base cars have no such row and
+    # stay plain on-disc cars; the package is mounted by its folder name, not through the offer tables.
     lines = [f"-- ForzaPartTool: replace car {D} ({donor_media}) with the model in media/cars/{new_media}/\n",
              "-- The same Data_Car id; only MediaName changes. Run by the game at start-up from this package.\n",
-             _insert_sql("Data_Car", row),
-             _insert_sql("ContentOffers", b.content_offer_row(offer, "", "")),
-             _insert_sql("ContentOffersMapping", {"Id": offer * 1000, "OfferId": b.offer_id_int(offer), "ContentId": D, "ContentType": 1})]
+             _insert_sql("Data_Car", row)]
     sql = "".join(lines)
 
     def rename_bytes(data: bytes) -> bytes:
