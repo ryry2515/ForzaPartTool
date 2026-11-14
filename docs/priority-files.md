@@ -21,7 +21,7 @@ For a file the base game **does** have, the log stops after step 1 or 2: the `_p
 - `_pri_99` (what car packs use) can only **add** files the base game lacks. It cannot replace a base file.
 - `_pri_100001` is asked **before** the base game. It is the kind of folder that can replace a base file.
 
-The same holds for files inside the base game's own zips (effects, camera, sky, spectators, game modes, tunable settings, physics, UI textures): the lookups for them are asked of the `_pri_100001` folder first. The reverse engineering notes behind this (the sort order in the executable, the base zips' own priorities of 80 and 95) are in the `fh1-reverse-engineering` repository, `dlc_priority_order.md`.
+The same holds for files inside the base game's own zips (effects, camera, sky, spectators, game modes, tunable settings, physics, UI textures): the lookups for them are asked of the `_pri_100001` folder first. The executable's own side of it (the volume list is sorted by descending priority; the base game's zips are listed with priorities of 80 and 95 in `zipmanifest.xml`) was read from the disassembly.
 
 ## What is not known
 
