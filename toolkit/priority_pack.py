@@ -70,8 +70,8 @@ def make_test_files(game_dir: Path) -> dict[str, bytes]:
     return {TEST_PATH: xds.encode_like(original, rgba)}
 
 
-def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Package files that replace base-game files (priority files).")
+def main(argv: list[str] | None = None, prog: str | None = None) -> int:
+    ap = argparse.ArgumentParser(prog=prog, description="Package files that replace base-game files (priority files).")
     ap.add_argument("--offer", type=int, required=True, help="offer number of the package (pick one no other pack uses)")
     ap.add_argument("--name", required=True, help="display name of the package")
     ap.add_argument("--out", required=True, help="output folder")

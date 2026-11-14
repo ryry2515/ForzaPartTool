@@ -1,6 +1,12 @@
-ForzaPartTool 2.3.1
+ForzaPartTool 2.4.0
 
-What is new in 2.3.1:
+What is new in 2.4.0:
+- NEW: Priority files, from the command line (not in the window yet). ForzaPartTool.exe --priority-pack packages files that replace base-game files by path, in a folder named <offer>_pri_100001. In an emulator log, such a folder was asked for a file BEFORE the base game, and the _pri_99 folders of ordinary car packs AFTER it (and only when the base game lacks the file). So a _pri_99 folder can only add files, while a _pri_100001 folder is the kind that can replace them. Open a command prompt in the program folder and run: ForzaPartTool.exe --priority-pack --help
+- One-file test: ForzaPartTool.exe --priority-pack --offer 935710 --name "Priority A-button test" --out <folder> --test-pack "<extracted game folder>" builds a pack that inverts the colours of the controller A button icon in the menus. Close Xenia, copy the package and its header into Xenia's content folder, open a menu: an inverted icon means the game reads priority files for UI textures.
+- NOT yet seen in the game: whether a replacement is used for each kind of file (UI textures, XML settings, car files), the lowest number that beats the base game, and car zips (the game mounts them with directory positions read from its zipmanifest.xml). Please tell me what the test shows.
+- Checked offline: 22 tests; a pack built from the real game's A button icon reads back inverted.
+
+Earlier: what was new in 2.3.1:
 - FIX: Replace mode no longer adds a ContentOffers and a ContentOffersMapping row. The game treats a car that has a mapping row as DLC content (it can disappear when the offer is not installed), and base cars have none. The package now changes only the Data_Car row (the new MediaName). Not seen in the game yet.
 
 Earlier: what was new in 2.3.0 (asked for by a modder):

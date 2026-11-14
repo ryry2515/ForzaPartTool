@@ -141,3 +141,19 @@ def test_the_a_button_test_pack_inverts_the_colours_of_the_real_icon(tmp_path):
     # block compression is lossy, so compare means: the colour channels moved about as far as an inversion moves them
     delta = np.abs((255 - before[opaque, :3].astype(int)).mean() - after[opaque, :3].astype(int).mean())
     assert delta < 12
+
+
+def test_the_program_entry_runs_the_tool_without_starting_a_server(tmp_path):
+    """`server.py --priority-pack ...` is the entry the packaged ForzaPartTool.exe uses: it must write the package and exit, not open the editor."""
+    import subprocess
+    server = Path(__file__).resolve().parent.parent / "toolkit" / "carbin_editor" / "server.py"
+    f = tmp_path / "mine.xml"
+    f.write_bytes(b"<x/>")
+    out = tmp_path / "out"
+    r = subprocess.run([sys.executable, str(server), "--priority-pack", "--offer", "9504", "--name", "Test", "--out", str(out),
+                        f"media/effects/Smoke.xml={f}"], capture_output=True, text=True, timeout=180)
+    assert r.returncode == 0, r.stderr
+    assert "1 file(s) in Media/DLCZips/9504_pri_100001" in r.stdout
+    assert (out / "xenia" / b.package_name(9504) / "Media" / "DLCZips" / "9504_pri_100001" / "media" / "effects" / "Smoke.xml").read_bytes() == b"<x/>"
+    h = subprocess.run([sys.executable, str(server), "--priority-pack", "--help"], capture_output=True, text=True, timeout=180)
+    assert h.returncode == 0 and "--test-pack" in h.stdout and "server.py --priority-pack" in h.stdout
