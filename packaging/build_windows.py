@@ -18,12 +18,12 @@ ROOT = Path(__file__).resolve().parent.parent
 TK = ROOT / "toolkit"
 ED = TK / "carbin_editor"
 MODULES = ["carbin_geom", "carbin_library", "atlas_paint", "clone_car", "dlc_builder", "fh1_sources", "lsb2", "physdef", "gr2", "gr2_curves",
-           "gr2_skeleton", "xds", "xlzx", "fh1_carbin", "stfs", "fm4_carbin", "carbin_parts", "modelbin", "modelbin_writer", "part_actions", "part_look", "editor_desktop", "webview"]
+           "gr2_skeleton", "xds", "xlzx", "fh1_carbin", "stfs", "fm4_carbin", "carbin_parts", "modelbin", "modelbin_writer", "part_actions", "part_look", "priority_pack", "editor_desktop", "webview"]
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--version", default="2.3.1")
+    ap.add_argument("--version", default="2.4.0")
     ap.add_argument("--out", default=str(ROOT / "build"))
     a = ap.parse_args()
     import PyInstaller.__main__ as pi
@@ -123,6 +123,13 @@ No Python installation or external browser is needed. Windows WebView2 Runtime i
    is included automatically. Main and LOD0 are separate files: edit/stage both to cover
    driving and menus/photo mode. Choose Xenia folder or console STFS output.
    Output is separate from your installed game. Follow the displayed installation paths.
+8. Priority files (command line, new in 2.4.0). Open a command prompt in this folder and run
+       ForzaPartTool.exe --priority-pack --help
+   It packages files that replace base-game files by path, in a folder the game asks BEFORE
+   the base game (a _pri_100001 folder). A normal DLC folder (_pri_99) is asked after the base
+   game, so it can only add files. Whether the game uses a replacement for each kind of file
+   has to be seen in the game: --test-pack GAME builds a one-file test (the menu A-button icon
+   with inverted colours). Details: docs/priority-files.md in the source.
 
 Close the app window to stop its backend.
 Settings: %APPDATA%\\FH1CarbinEditor\\settings.json
@@ -131,8 +138,8 @@ Startup errors: %APPDATA%\\FH1CarbinEditor\\startup-error.log
 Use your own game and DLC files. Nothing from the game is included.
 Back up your save before testing a newly exported car. Do not remove a DLC while
 its cars remain in your save. Close Xenia before replacing installed content.
-A base game's original file wins over the same path in DLC, which is why DLC export
-creates a separately named car. In-game compatibility must be checked in Xenia/hardware.
+A base game's original file wins over the same path in a normal DLC folder (priority 99), which is why
+DLC export creates a separately named car. In-game compatibility must be checked in Xenia/hardware.
 
 Source: https://github.com/ryry2515/ForzaPartTool
 Not affiliated with Microsoft, Turn 10 or Playground Games. MIT license.

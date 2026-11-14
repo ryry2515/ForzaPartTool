@@ -56,3 +56,12 @@ This builds a pack with one visible change: the controller **A button** icon of 
 ## In the tool
 
 Not in the window yet; the command line is the only way for now. The window's existing exports are unchanged (they still use `_pri_99`).
+
+The Windows program has the same tool built in. It is a windowed program, so start it from a command prompt in its folder:
+
+```
+ForzaPartTool.exe --priority-pack --help
+ForzaPartTool.exe --priority-pack --offer 9500 --name "My override" --out OUT --dir FILES
+```
+
+From a source checkout the same thing is `python toolkit/carbin_editor/server.py --priority-pack ...` or `python toolkit/priority_pack.py ...`.

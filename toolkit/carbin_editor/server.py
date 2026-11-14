@@ -1745,6 +1745,26 @@ class Handler(BaseHTTPRequestHandler):
             self._err(e)
 
 
+def _attach_parent_console():
+    """The packaged program is a windowed exe with no console of its own: join the console that started it, so the text of the command line tool shows there."""
+    if not (FROZEN and sys.platform == "win32"):
+        return
+    try:
+        import ctypes
+        if ctypes.windll.kernel32.AttachConsole(-1):            # ATTACH_PARENT_PROCESS
+            sys.stdout = open("CONOUT$", "w", encoding="utf-8", buffering=1)
+            sys.stderr = open("CONOUT$", "w", encoding="utf-8", buffering=1)
+    except Exception:  # noqa: BLE001 - no console to join: the tool still writes its package
+        pass
+
+
+def priority_pack_cli(args):
+    """`ForzaPartTool.exe --priority-pack ...` (or `server.py --priority-pack ...`): the tool of priority_pack.py, without starting the editor."""
+    _attach_parent_console()
+    import priority_pack
+    return priority_pack.main(args, prog="ForzaPartTool.exe --priority-pack" if FROZEN else "server.py --priority-pack")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("file", nargs="?")
@@ -1782,6 +1802,8 @@ def main():
 
 
 if __name__ == "__main__":
+    if sys.argv[1:2] == ["--priority-pack"]:
+        sys.exit(priority_pack_cli(sys.argv[2:]))
     try:
         main()
     except SystemExit:
