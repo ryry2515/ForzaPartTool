@@ -10,6 +10,11 @@ What it writes (layout measured from a working multi-part pack):
 
 The result can be written as a folder for Xenia (with the .header file Xenia needs) and/or as an STFS file for a modded console.
 
+Priority files (build_priority_files): a package whose only content is files that REPLACE base-game files by path, in
+    Media/DLCZips/<offer>_pri_100001/<path as the game sees it, for example media/ui/textures/horizon/controller/A_Button.xds>
+The number after _pri_ is the search order: higher numbers are searched first. In an emulator log, a folder named _pri_100001 was asked for a file
+before the base game, and the _pri_99 folders of the car packs after it (and only when the base game lacks the file). See docs/priority-files.md.
+
 Typical use:
     from dlc_builder import *
     db = new_merge_db(base_gamedb_bytes, ["ContentOffers", "Data_Car"])     # empty tables with the game's own schema
@@ -24,6 +29,7 @@ Nothing here installs anything. Close Xenia before installing.
 from __future__ import annotations
 
 import io
+import os
 import sqlite3
 import struct
 import tempfile
@@ -32,6 +38,8 @@ from pathlib import Path
 
 TITLE_ID = 0x4D5309C9
 PUBOFFER = b" \r\n"
+# Folder priority that is searched BEFORE the base game (measured in an emulator log; the _pri_99 folders of the car packs come after the base game).
+OVERRIDE_PRIORITY = 100001
 # Language folder names as found in a working pack (and in the base game's string table archives).
 LANGUAGES = ["CHT", "DA", "DE", "DEV", "EN", "ES", "FI", "FR", "GB", "HU", "IT", "JP", "KO", "LOC", "MX", "NB", "PL", "RU", "SV", "br", "cz", "nl"]
 
@@ -147,6 +155,92 @@ def build_files(offer: int, *, merge_db: bytes | None = None, execute_sql: bytes
     return files
 
 
+def priority_folder(offer: int, priority: int = OVERRIDE_PRIORITY) -> str:
+    """Package-relative folder that holds the priority files of `offer`."""
+    if not isinstance(priority, int) or priority < 1:
+        raise ValueError("priority must be a positive whole number")
+    return f"Media/DLCZips/{offer}_pri_{priority}"
+
+
+def clean_game_path(path: str) -> str:
+    """A path as the game sees it, with forward slashes and no 'game:' prefix, drive letter, leading slash or '..'.
+    Raises ValueError for anything else, so a typo cannot write outside the priority folder."""
+    p = path.replace("\\", "/").strip()
+    if p.lower().startswith("game:"):
+        p = p[5:]
+    parts = [x for x in p.split("/") if x not in ("", ".")]
+    if not parts or ".." in parts or any(":" in x for x in parts):
+        raise ValueError(f"not a game-relative path: {path!r}")
+    return "/".join(parts)
+
+
+def build_priority_files(offer: int, files: dict[str, bytes], *, priority: int = OVERRIDE_PRIORITY) -> dict[str, bytes]:
+    """Return {path inside the package: bytes} for a package that replaces base-game files.
+
+    files  {game path: bytes}, for example {"media/effects/Smoke.xml": b"..."}; the path is where the game looks for the file.
+    A path that the game does not have is only ADDED (it still works for a file that nothing else provides); check your paths with missing_in_game().
+    Two paths that differ only by case are refused: they are the same file to the game and crash it when both ship in one folder.
+    """
+    if not files:
+        raise ValueError("no files to package")
+    folder = priority_folder(offer, priority)
+    out: dict[str, bytes] = {f"Media/{offer}.puboffer": PUBOFFER}
+    seen: dict[str, str] = {}
+    for raw, data in files.items():
+        rel = clean_game_path(raw)
+        if rel.lower() in seen:
+            raise ValueError(f"two files differ only by case: {seen[rel.lower()]!r} and {rel!r}")
+        seen[rel.lower()] = rel
+        out[f"{folder}/{rel}"] = data
+    return out
+
+
+def _ci_child(directory: Path, name: str) -> Path | None:
+    """The entry of `directory` called `name`, ignoring case (the game ignores case; the file system may not)."""
+    direct = directory / name
+    if direct.exists():
+        return direct
+    low = name.lower()
+    try:
+        with os.scandir(directory) as it:
+            for e in it:
+                if e.name.lower() == low:
+                    return Path(e.path)
+    except OSError:
+        pass
+    return None
+
+
+def game_has_path(game_dir, rel: str) -> bool:
+    """True if an EXTRACTED game folder has the file `rel`, either loose or inside a zip that sits on the way
+    (`media/effects/Smoke.xml` is the member `Smoke.xml` of `media/effects.zip`). Zip members are only listed, never unpacked."""
+    cur = Path(game_dir)
+    parts = clean_game_path(rel).split("/")
+    for i, part in enumerate(parts):
+        last = i == len(parts) - 1
+        child = _ci_child(cur, part)
+        if child is not None and (child.is_file() if last else child.is_dir()):
+            cur = child
+            continue
+        if last:
+            return False
+        z = _ci_child(cur, part + ".zip")
+        if z is None or not z.is_file():
+            return False
+        rest = "/".join(parts[i + 1:]).lower()
+        try:
+            with zipfile.ZipFile(z) as zf:
+                return rest in {n.replace("\\", "/").lower() for n in zf.namelist()}
+        except (zipfile.BadZipFile, OSError):
+            return False
+    return True
+
+
+def missing_in_game(game_dir, paths) -> list[str]:
+    """The paths (game-relative) that an extracted game folder does not have. A path in this list is not a replacement, only an addition."""
+    return [p for p in paths if not game_has_path(game_dir, p)]
+
+
 def xenia_header(name: str, display: str, title_id: int = TITLE_ID) -> bytes:
     """The 332-byte .header file Xenia needs next to an installed package."""
     h = bytearray(332)
@@ -189,8 +283,9 @@ def write_stfs(files: dict[str, bytes], out_path, display: str, description: str
     return p
 
 
-def verify_folder(folder) -> list[str]:
-    """Offline checks of a built package folder. Returns a list of problems (empty = looks right). This does not run the game."""
+def verify_folder(folder, *, allow_no_database: bool = False) -> list[str]:
+    """Offline checks of a built package folder. Returns a list of problems (empty = looks right). This does not run the game.
+    allow_no_database=True accepts a package that only carries priority files (no merge database, no execute.sql)."""
     import fh1_sources as srcmod
     problems = []
     pkg = srcmod.DLCPackage(Path(folder))
@@ -205,7 +300,7 @@ def verify_folder(folder) -> list[str]:
             problems.append(f"{n}: two members differ only by case (crashes the game)")
     merges = pkg.merges()
     has_sql = any(n.lower().endswith("_execute.sql") for n in pkg.names())
-    if len(merges) != 1 and not (has_sql and not merges):
+    if len(merges) != 1 and not (has_sql and not merges) and not (allow_no_database and not merges and not has_sql):
         problems.append(f"expected one merge database or one execute.sql, found {len(merges)} databases")
     for blob in merges:
         con = srcmod.open_db(blob)

@@ -43,6 +43,7 @@
 | Export car ZIP | A replacement car archive for an extracted game or DLC copy |
 | Apply to existing car | Writes into a writable game or DLC folder (a `.bak` is made once) |
 | Export as a new DLC car | A new car with its own ID and database rows, as a Xenia folder and/or console package, using your edited files; the output folder is remembered. It also writes the project, the model as OBJ + MTL (for Blender), and an experimental folder of `.modelbin` files, one per part |
+| Priority files (command line) | `toolkit/priority_pack.py` packages files that replace base-game files by path, in a `_pri_100001` folder that the game asks before the base game. Not in the window yet; checked offline only. See [docs/priority-files.md](docs/priority-files.md) for what was measured, what is not known and a one-file in-game test |
 | Export as DLC, replace mode | Replaces the open car in place: **the same Data_Car id**, the database change as a plain-text **`.sql` file** (`INSERT OR REPLACE INTO [Data_Car] ...`, run by the game at start-up like the Wheel Adder's `execute.sql`) with `MediaName` set to the name of the folder you made for the new model. The new name must be the same length as the original. A readable copy of the `.sql` is written next to the package. Checked offline only |
 
 Also: a loading bar while cars load, **Unload car**, and remembered game and DLC folders. Saved settings live in `%APPDATA%\FH1CarbinEditor` (the folder keeps its first name so nothing is lost on upgrade) and never leave your computer.
